@@ -96,12 +96,12 @@ int main(int argc, char *argv[])
         printf("\n");
     }
     printf("         Choose the scheduling algorithm\n");
-    printf(" Highest priority first ---->       1\n");
-    printf(" shortest remaining time next ----> 2\n");
-    printf(" Round Robin ---->                  3\n");
+    printf(" Highest priority first ---->       %d\n",HPF);
+    printf(" shortest remaining time next ----> %d\n",SRTN);
+    printf(" Round Robin ---->                  %d\n",RR);
     int input;
     scanf("%d", &input);
-    if (input == 3)
+    if (input == RR)
     {
         printf("Round robin quantum?\n");
         int quantum;
