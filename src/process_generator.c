@@ -1,5 +1,4 @@
 #include "headers.h"
-#define SHKEY 300
 
 void clearResources(int);
 struct processData
@@ -8,6 +7,12 @@ struct processData
     int priority;
     int runningtime;
     int id;
+};
+enum algorithm
+{
+    HPF = 1,
+    SRTN,
+    RR
 };
 
 int main(int argc, char *argv[])
@@ -20,21 +25,21 @@ int main(int argc, char *argv[])
     if (!file)
     {
         perror("error in open file");
+        exit(0);
     }
     char line[100];
-    char c;
     int line_count = 0;
-
-    do
+    while (fgets(line, sizeof(line), file))
     {
         if (line[0] != '#')
+        {
             line_count = line_count + 1;
-    } while (fgets(line, sizeof(line), file));
-
+        }
+    }
     printf("line count %d\n", line_count);
     fseek(file, 0, SEEK_SET);
 
-    struct processData *p = malloc(sizeof(int) * line_count);
+    struct processData *p = malloc(sizeof(struct processData) * line_count);
     int i = 0;
     while (fgets(line, sizeof(line), file))
     {
@@ -58,14 +63,16 @@ int main(int argc, char *argv[])
 
     // 1. Read the input files.
     // 2. Ask the user for the chosen scheduling algorithm and its parameters, if there are any.
-    // 3. Initiate and create the scheduler and clock processes.
-    // 4. Use this function after creating the clock process to initialize clock
-    // initClk();
-    // To get time use this
-    // TODO Generation Main Loop
-    // 5. Create a data structure for processes and provide it with its parameters.
-    // 6. Send the information to the scheduler at the appropriate time.
-    // 7. Clear clock resources
+
+    // scanf();
+    //  3. Initiate and create the scheduler and clock processes.
+    //  4. Use this function after creating the clock process to initialize clock
+    //  initClk();
+    //  To get time use this
+    //  TODO Generation Main Loop
+    //  5. Create a data structure for processes and provide it with its parameters.
+    //  6. Send the information to the scheduler at the appropriate time.
+    //  7. Clear clock resources
 
     int pid = fork();
     if (pid == 0)
@@ -73,7 +80,6 @@ int main(int argc, char *argv[])
         char *args[] = {"./clk.out", NULL};
         execv("./clk.out", args);
     }
-    sleep(1);
     initClk();
     int x = getClk();
     printf("current time is %d\n", x);
@@ -89,6 +95,19 @@ int main(int argc, char *argv[])
         printf("p %d priority: %d\n", j, p[j].priority);
         printf("\n");
     }
+    printf("         Choose the scheduling algorithm\n");
+    printf(" Highest priority first ---->       1\n");
+    printf(" shortest remaining time next ----> 2\n");
+    printf(" Round Robin ---->                  3\n");
+    int input;
+    scanf("%d", &input);
+    if (input == 3)
+    {
+        printf("Round robin quantum?\n");
+        int quantum;
+        scanf("%d", &quantum);
+    }
+
     destroyClk(true);
 }
 
