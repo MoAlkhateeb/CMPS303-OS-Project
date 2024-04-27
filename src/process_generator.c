@@ -83,6 +83,7 @@ int main(int argc, char *argv[])
     initClk();
     int x = getClk();
     printf("current time is %d\n", x);
+  
     for (int j = 0; j < i; j++)
     {
         do
@@ -107,6 +108,11 @@ int main(int argc, char *argv[])
         int quantum;
         scanf("%d", &quantum);
     }
+
+    // TODO Generation Main Loop
+    // 5. Create a data structure for processes and provide it with its parameters.
+    // 6. Send the information to the scheduler at the appropriate time.
+    // 7. Clear clock resources
 
     destroyClk(true);
 }
