@@ -6,7 +6,8 @@ build:
 	gcc test_generator.c -o test_generator.out
 	gcc process_control_block.c -o process_control_block.out
 	gcc linkedlist.c -o linkedlist.out
-
+	gcc pri_queue.c -o pri_queue.out
+  
 clean:
 	rm -f *.out  processes.txt
 
