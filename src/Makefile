@@ -4,6 +4,8 @@ build:
 	gcc scheduler.c -o scheduler.out
 	gcc process.c -o process.out
 	gcc test_generator.c -o test_generator.out
+	gcc process_control_block.c -o process_control_block.out
+	gcc linkedlist.c -o linkedlist.out
 
 clean:
 	rm -f *.out  processes.txt
