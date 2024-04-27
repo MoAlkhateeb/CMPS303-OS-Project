@@ -1,6 +1,6 @@
 #include "pri_queue.h"
 
-PriQueue *create_pri_queue() {
+PriQueue *createPriQueue() {
     PriQueue *queue = (PriQueue *)malloc(sizeof(PriQueue));
     queue->size = 0;
     queue->head = NULL;
@@ -8,7 +8,7 @@ PriQueue *create_pri_queue() {
     return queue;
 }
 
-void destroy_pri_queue(PriQueue *queue) {
+void destroyPriQueue(PriQueue *queue) {
     PriQueueNode *head = queue->head;
 
     while (head) {
@@ -20,12 +20,9 @@ void destroy_pri_queue(PriQueue *queue) {
     free(queue);
 }
 
-int is_empty_pri_queue(PriQueue *queue) {
-    return queue->size == 0;
-}
+int isEmptyPriQueue(PriQueue *queue) { return queue->size == 0; }
 
-void insert_pri_queue(PriQueue *queue, int priority, PCB *pcb) {
-
+void insertPriQueue(PriQueue *queue, int priority, pcb *pcb) {
     // creating node
     PriQueueNode *node = (PriQueueNode *)malloc(sizeof(PriQueueNode));
     node->priority = priority;
@@ -34,7 +31,7 @@ void insert_pri_queue(PriQueue *queue, int priority, PCB *pcb) {
     // incrementing size
     queue->size++;
 
-    PriQueueNode* head = queue->head;
+    PriQueueNode *head = queue->head;
 
     // if the queue is empty
     if (!head) {
@@ -57,7 +54,7 @@ void insert_pri_queue(PriQueue *queue, int priority, PCB *pcb) {
         head = head->next;
     }
 
-    // inser the node
+    // insert the node
     node->next = head->next;
     head->next = node;
 
@@ -65,19 +62,17 @@ void insert_pri_queue(PriQueue *queue, int priority, PCB *pcb) {
     if (!node->next) {
         queue->tail = node;
     }
-
 }
 
-PCB *pop_pri_queue(PriQueue *queue) {
-
+pcb *popPriQueue(PriQueue *queue) {
     // if the queue is empty return NULL
-    if (is_empty_pri_queue(queue)) {
+    if (isEmptyPriQueue(queue)) {
         return NULL;
     }
 
     // get head node and pcb
     PriQueueNode *node = queue->head;
-    PCB *pcb = node->pcb;
+    pcb *pcb = node->pcb;
 
     // update head
     queue->head = node->next;
@@ -91,11 +86,10 @@ PCB *pop_pri_queue(PriQueue *queue) {
     return pcb;
 }
 
-
-void print_pri_queue(PriQueue* queue) {
-    PriQueueNode* head = queue->head;
+void printPriQueue(PriQueue *queue) {
+    PriQueueNode *head = queue->head;
     while (head) {
-        printf("PCB: %d - Priority: %d\n", head->pcb->pid, head->priority);
+        printf("PCB: %d - Priority: %d\n", head->pcb->id, head->priority);
         head = head->next;
     }
 }

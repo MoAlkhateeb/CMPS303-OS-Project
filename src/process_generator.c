@@ -1,50 +1,40 @@
+#include <sys/ipc.h>
+#include <sys/msg.h>
+#include <sys/types.h>
+
 #include "headers.h"
+#include "linkedlist.h"
 
 void clearResources(int);
-struct processData
-{
+struct processData {
     int arrivaltime;
     int priority;
     int runningtime;
     int id;
 };
-enum algorithm
-{
-    HPF = 1,
-    SRTN,
-    RR
-};
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     signal(SIGINT, clearResources);
 
-    // TODO Initialization
-
+    // 1. Read the algorithm files.
     FILE *file = fopen("processes.txt", "r");
-    if (!file)
-    {
+    if (!file) {
         perror("error in open file");
         exit(0);
     }
     char line[100];
     int line_count = 0;
-    while (fgets(line, sizeof(line), file))
-    {
-        if (line[0] != '#')
-        {
+    while (fgets(line, sizeof(line), file)) {
+        if (line[0] != '#') {
             line_count = line_count + 1;
         }
     }
-    printf("line count %d\n", line_count);
     fseek(file, 0, SEEK_SET);
 
     struct processData *p = malloc(sizeof(struct processData) * line_count);
     int i = 0;
-    while (fgets(line, sizeof(line), file))
-    {
-        if (line[0] == '#')
-        {
+    while (fgets(line, sizeof(line), file)) {
+        if (line[0] == '#') {
             continue;
         }
         int id, arrival, runtime, priority;
@@ -53,72 +43,94 @@ int main(int argc, char *argv[])
         p[i].id = id;
         p[i].runningtime = runtime;
         p[i].priority = priority;
-        printf("p %d arrival time: %d\n", i, p[i].arrivaltime);
-        printf("p %d id: %d\n", i, p[i].id);
-        printf("p %d runtime: %d\n", i, p[i].runningtime);
-        printf("p %d priority: %d\n", i, p[i].priority);
-        printf("\n");
         i++;
     }
 
-    // 1. Read the input files.
-    // 2. Ask the user for the chosen scheduling algorithm and its parameters, if there are any.
+    // 2. Ask the user for the chosen scheduling algorithm and its parameters,
+    // if there are any.
+    printf("Choose the scheduling algorithm\n");
+    printf(" Highest priority first:              %d\n", HPF);
+    printf(" shortest remaining time next:        %d\n", SRTN);
+    printf(" Round Robin:                         %d\n", RR);
 
-    // scanf();
-    //  3. Initiate and create the scheduler and clock processes.
-    //  4. Use this function after creating the clock process to initialize clock
-    //  initClk();
-    //  To get time use this
-    //  TODO Generation Main Loop
-    //  5. Create a data structure for processes and provide it with its parameters.
-    //  6. Send the information to the scheduler at the appropriate time.
-    //  7. Clear clock resources
+    int algorithm;
+    scanf("%d", &algorithm);
 
-    int pid = fork();
-    if (pid == 0)
-    {
-        char *args[] = {"./clk.out", NULL};
-        execv("./clk.out", args);
-    }
-    initClk();
-    int x = getClk();
-    printf("current time is %d\n", x);
-  
-    for (int j = 0; j < i; j++)
-    {
-        do
-        {
-            x = getClk();
-        } while (p[j].arrivaltime > x);
-        printf("p %d arrival time: %d\n", j, p[j].arrivaltime);
-        printf("p %d id: %d\n", j, p[j].id);
-        printf("p %d runtime: %d\n", j, p[j].runningtime);
-        printf("p %d priority: %d\n", j, p[j].priority);
-        printf("\n");
-    }
-    printf("         Choose the scheduling algorithm\n");
-    printf(" Highest priority first ---->       %d\n",HPF);
-    printf(" shortest remaining time next ----> %d\n",SRTN);
-    printf(" Round Robin ---->                  %d\n",RR);
-    int input;
-    scanf("%d", &input);
-    if (input == RR)
-    {
+    int quantum;
+    if (algorithm == RR) {
         printf("Round robin quantum?\n");
-        int quantum;
         scanf("%d", &quantum);
     }
 
-    // TODO Generation Main Loop
-    // 5. Create a data structure for processes and provide it with its parameters.
-    // 6. Send the information to the scheduler at the appropriate time.
-    // 7. Clear clock resources
+    char quantum_str[10], algorithm_str[10];
+    sprintf(quantum_str, "%d", quantum);
+    sprintf(algorithm_str, "%d", algorithm);
 
-    destroyClk(true);
+    key_t key = ftok("headers.h", 10);
+    int msgq_id = msgget(key, 0666 | IPC_CREAT);
+    if (msgq_id == -1) {
+        perror("Error in create");
+        exit(-1);
+    }
+
+    processMessage message;
+    message.type = 1;
+
+    //  3. Initiate and create the scheduler and clock processes.
+    int pid = fork();
+    if (pid == 0) {
+        char *args[] = {"./clk.out", NULL};
+        execv(args[0], args);
+    }
+
+    pid = fork();
+    if (pid == 0) {
+        char *args[] = {"./scheduler.out", algorithm_str, quantum_str, NULL};
+        execv(args[0], args);
+    }
+
+    //  4. Use this function after creating the clock process to initialize
+    //  clock
+    initClk();
+
+    //  5. Create a data structure for processes and provide it with its
+    //  parameters.
+
+    //  6. Send the information to the scheduler at the appropriate time.
+    int time;
+    for (int j = 0; j < i; j++) {
+        do {
+            time = getClk();
+        } while (p[j].arrivaltime > time);
+
+        pcb process;
+        process.pid = -1;
+        process.id = p[j].id;
+        process.arrivalTime = p[j].arrivaltime;
+        process.priority = p[j].priority;
+        process.burstTime = p[j].runningtime;
+        process.state = STARTED;
+
+        // constantly need to be updated
+        process.remainingTime = p[j].runningtime;
+        process.waitTime = 0;
+
+        process.finishTime = -1;
+        process.turnaroundTime = -1;
+        process.weightedTurnarounTime = -1;
+
+        message.process = process;
+
+        int status =
+            msgsnd(msgq_id, &message, sizeof(message.process), !IPC_NOWAIT);
+        printf("Sent %d: %d\n", message.process.id, status);
+    }
+
+    //  7. Clear clock resources
+    clearResources(false);
 }
 
-void clearResources(int signum)
-{
+void clearResources(int signum) {
     destroyClk(true);
     exit(0);
 }

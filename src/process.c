@@ -1,5 +1,6 @@
-#include "headers.h"
 #include <sys/signal.h>
+
+#include "headers.h"
 
 volatile int stopedtime = 0, resumedtime = 0;
 volatile int remainingtime, entrancetime, originalremainingtime;
@@ -7,8 +8,7 @@ volatile int remainingtime, entrancetime, originalremainingtime;
 void sigtstp_handler();
 void sigcont_handler();
 
-int main(int agrc, char * argv[])
-{
+int main(int agrc, char* argv[]) {
     initClk();
 
     signal(SIGTSTP, sigtstp_handler);
@@ -18,14 +18,13 @@ int main(int agrc, char * argv[])
     entrancetime = getClk();
     originalremainingtime = remainingtime;
 
-    while (remainingtime > 0)
-    {
-        remainingtime = ( originalremainingtime - ( getClk() - entrancetime ));
+    while (remainingtime > 0) {
+        remainingtime = (originalremainingtime - (getClk() - entrancetime));
     }
 
     destroyClk(false);
 
-    return 0;
+    return 1;
 }
 
 void sigtstp_handler() {

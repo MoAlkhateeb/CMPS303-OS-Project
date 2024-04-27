@@ -1,14 +1,14 @@
+#pragma once
+
 #include <stdio.h>
 #include <stdlib.h>
 
-typedef struct PCB {
-    int pid;
-} PCB;
+#include "headers.h"
 
 typedef struct PriQueueNode {
     int priority;
-    PCB *pcb;
-    struct PriQueueNode* next;
+    pcb *pcb;
+    struct PriQueueNode *next;
 
 } PriQueueNode;
 
@@ -18,10 +18,9 @@ typedef struct PriQueue {
     int size;
 } PriQueue;
 
-
-PriQueue *create_pri_queue();
-void destroy_pri_queue(PriQueue *queue);
-void insert_pri_queue(PriQueue *queue, int priority, struct PCB *pcb);
-PCB *pop_pri_queue(PriQueue *queue);
-int is_empty_pri_queue(PriQueue *queue);
-void print_pri_queue(PriQueue* queue);
+PriQueue *createPriQueue();
+void destroyPriQueue(PriQueue *queue);
+void insertPriQueue(PriQueue *queue, int priority, pcb *pcb);
+pcb *popPriQueue(PriQueue *queue);
+int isEmptyPriQueue(PriQueue *queue);
+void printPriQueue(PriQueue *queue);
