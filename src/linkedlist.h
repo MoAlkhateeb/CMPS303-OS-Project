@@ -1,5 +1,5 @@
 #include "headers.h"
-#include "process_control_block.c"
+#include "process_control_block.h"
 
 struct listNode {
 	int nodeLength;
