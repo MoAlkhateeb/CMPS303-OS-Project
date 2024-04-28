@@ -12,7 +12,7 @@
 
 void addPCBtoPriQueue(PriQueue** priQueue, pcb* pcb,
                       enum schedulingAlgorithm algorithm);
-void printOutputStatus(char* filename, pcb* pcb);
+void printOutputStatus(char* filename, pcb* pcb, int time);
 pcb* getProcess();
 
 int SchedulerQueueID = -1;
@@ -47,6 +47,35 @@ int main(int argc, char* argv[]) {
             printf("[ENTERED]: id: %d\n", newProcess->id);
         }
 
+        if (runningProcess) {
+            int Stat = INT_MAX;
+            int wpid;
+
+            if (algorithm == HPF)
+                wpid = waitpid(runningProcess->pid, &Stat, !WNOHANG);
+            else
+                wpid = waitpid(runningProcess->pid, &Stat, WNOHANG);
+
+            if (WEXITSTATUS(Stat) == 0) {
+                printf("[FINISHED]: id: %d\n", runningProcess->id);
+                runningProcess->state = FINISHED;
+                runningProcess->remainingTime = 0;
+                runningProcess->finishTime = getClk();
+                runningProcess->turnaroundTime =
+                    runningProcess->finishTime - runningProcess->arrivalTime;
+                runningProcess->weightedTurnarounTime =
+                    runningProcess->turnaroundTime /
+                    (float)runningProcess->burstTime;
+                printOutputStatus(outputFileName, runningProcess,
+                                  runningProcess->finishTime);
+                deletePCB(&processTable, runningProcess->id);
+                runningProcess = NULL;
+
+            } else {
+                addPCBtoPriQueue(&readyQueue, runningProcess, algorithm);
+            }
+        }
+
         // get highest priority process
         pcb* nextProcess = popPriQueue(&readyQueue);
 
@@ -68,12 +97,13 @@ int main(int argc, char* argv[]) {
 
         // stop current process if it's not the next process or quantum is over
         if (algorithm != HPF) {
+            int time = getClk();
             if ((runningProcess && nextProcess &&
                  runningProcess != nextProcess) ||
-                (algorithm == RR && getClk() - startTime >= quantum)) {
+                (algorithm == RR && time - startTime >= quantum)) {
                 runningProcess->state = STOPPED;
                 kill(runningProcess->pid, SIGTSTP);
-                printOutputStatus(outputFileName, runningProcess);
+                printOutputStatus(outputFileName, runningProcess, time);
             }
         }
 
@@ -92,45 +122,17 @@ int main(int argc, char* argv[]) {
             }
 
             nextProcess->pid = pid;
-            printOutputStatus(outputFileName, nextProcess);
+            printOutputStatus(outputFileName, nextProcess, startTime);
 
             runningProcess = nextProcess;
 
         } else if (nextProcess && nextProcess->state == STOPPED) {
+            startTime = getClk();
             nextProcess->state = RESUMED;
             kill(nextProcess->pid, SIGCONT);
-            printOutputStatus(outputFileName, nextProcess);
-            startTime = getClk();
+            printOutputStatus(outputFileName, nextProcess, startTime);
 
             runningProcess = nextProcess;
-        }
-
-        if (runningProcess) {
-            int Stat = INT_MAX;
-            int wpid;
-
-            if (algorithm == HPF)
-                wpid = waitpid(runningProcess->pid, &Stat, !WNOHANG);
-            else
-                wpid = waitpid(runningProcess->pid, &Stat, WNOHANG);
-
-            if (WEXITSTATUS(Stat) == 0) {
-                printf("[FINISHED]: id: %d\n", runningProcess->id);
-                runningProcess->state = FINISHED;
-                runningProcess->remainingTime = 0;
-                runningProcess->finishTime = getClk();
-                runningProcess->turnaroundTime =
-                    runningProcess->finishTime - runningProcess->arrivalTime;
-                runningProcess->weightedTurnarounTime =
-                    runningProcess->turnaroundTime /
-                    (float)runningProcess->burstTime;
-                printOutputStatus(outputFileName, runningProcess);
-                deletePCB(&processTable, runningProcess->id);
-                runningProcess = NULL;
-
-            } else {
-                addPCBtoPriQueue(&readyQueue, runningProcess, algorithm);
-            }
         }
     }
     destroyClk(true);
@@ -152,7 +154,7 @@ void addPCBtoPriQueue(PriQueue** priQueue, pcb* pcb,
     }
 }
 
-void printOutputStatus(char* filename, pcb* pcb) {
+void printOutputStatus(char* filename, pcb* pcb, int time) {
     FILE* file = fopen(filename, "a");
 
     char state[10];
@@ -172,7 +174,7 @@ void printOutputStatus(char* filename, pcb* pcb) {
     }
 
     fprintf(file, "At time %d process %d %s arr %d total %d remain %d wait %d ",
-            getClk(), pcb->id, state, pcb->arrivalTime, pcb->burstTime,
+            time, pcb->id, state, pcb->arrivalTime, pcb->burstTime,
             pcb->remainingTime, pcb->waitTime);
 
     if (pcb->state == FINISHED)
