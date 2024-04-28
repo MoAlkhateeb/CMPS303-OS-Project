@@ -4,7 +4,6 @@ PriQueue *createPriQueue() {
     PriQueue *queue = (PriQueue *)malloc(sizeof(PriQueue));
     queue->size = 0;
     queue->head = NULL;
-    queue->tail = NULL;
     return queue;
 }
 
@@ -31,36 +30,28 @@ void insertPriQueue(PriQueue **queue, int priority, pcb *pcb) {
     // incrementing size
     (*queue)->size++;
 
-    PriQueueNode *head = (*queue)->head;
+    PriQueueNode *current = (*queue)->head;
 
     // if the queue is empty
-    if (!head) {
-        node->next = head;
+    if (!current) {
+        node->next = NULL;
         (*queue)->head = node;
-        (*queue)->tail = node;
-        return;
-    }
-
-    // if there is only one element in the queue
-    if (head == (*queue)->tail && head->priority > priority) {
-        (*queue)->head = node;
-        node->next = head;
-        (*queue)->tail = head;
         return;
     }
 
     // traverse to correct position
-    while (head && head->priority <= priority) {
-        head = head->next;
+    PriQueueNode *prev = NULL;
+    while (current && current->priority <= priority) {
+        prev = current;
+        current = current->next;
     }
 
     // insert the node
-    node->next = head;
-    (*queue)->head = node;
-
-    // if node is at the end of the queue update tail
-    if (!node->next) {
-        (*queue)->tail = node;
+    node->next = current;
+    if (prev) {
+        prev->next = node;
+    } else {
+        (*queue)->head = node;
     }
 }
 

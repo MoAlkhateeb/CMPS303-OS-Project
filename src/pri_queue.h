@@ -14,7 +14,6 @@ typedef struct PriQueueNode {
 
 typedef struct PriQueue {
     PriQueueNode *head;
-    PriQueueNode *tail;
     int size;
 } PriQueue;
 
