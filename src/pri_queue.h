@@ -19,8 +19,8 @@ typedef struct PriQueue {
 } PriQueue;
 
 PriQueue *createPriQueue();
-void destroyPriQueue(PriQueue *queue);
-void insertPriQueue(PriQueue *queue, int priority, pcb *pcb);
-pcb *popPriQueue(PriQueue *queue);
-int isEmptyPriQueue(PriQueue *queue);
-void printPriQueue(PriQueue *queue);
+void destroyPriQueue(PriQueue **queue);
+void insertPriQueue(PriQueue **queue, int priority, pcb *pcb);
+pcb *popPriQueue(PriQueue **queue);
+int isEmptyPriQueue(PriQueue **queue);
+void printPriQueue(PriQueue **queue);

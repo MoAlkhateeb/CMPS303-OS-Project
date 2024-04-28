@@ -3,9 +3,10 @@
 #include <sys/types.h>
 
 #include "headers.h"
-#include "linkedlist.h"
+#include "process_table.h"
 
-void clearResources(int);
+void clearResources();
+
 struct processData {
     int arrivaltime;
     int priority;
@@ -13,15 +14,18 @@ struct processData {
     int id;
 };
 
+int SchedulerQueueID = -1;
+
 int main(int argc, char *argv[]) {
     signal(SIGINT, clearResources);
 
     // 1. Read the algorithm files.
     FILE *file = fopen("processes.txt", "r");
     if (!file) {
-        perror("error in open file");
-        exit(0);
+        perror("Error in open file");
+        exit(1);
     }
+
     char line[100];
     int line_count = 0;
     while (fgets(line, sizeof(line), file)) {
@@ -67,8 +71,8 @@ int main(int argc, char *argv[]) {
     sprintf(algorithm_str, "%d", algorithm);
 
     key_t key = ftok("headers.h", 10);
-    int msgq_id = msgget(key, 0666 | IPC_CREAT);
-    if (msgq_id == -1) {
+    SchedulerQueueID = msgget(key, 0666 | IPC_CREAT);
+    if (SchedulerQueueID == -1) {
         perror("Error in create");
         exit(-1);
     }
@@ -99,9 +103,9 @@ int main(int argc, char *argv[]) {
     //  6. Send the information to the scheduler at the appropriate time.
     int time;
     for (int j = 0; j < i; j++) {
-        do {
-            time = getClk();
-        } while (p[j].arrivaltime > time);
+        if (getClk() < p[j].arrivaltime) {
+            sleep(p[j].arrivaltime - getClk());
+        }
 
         pcb process;
         process.pid = -1;
@@ -121,16 +125,27 @@ int main(int argc, char *argv[]) {
 
         message.process = process;
 
-        int status =
-            msgsnd(msgq_id, &message, sizeof(message.process), !IPC_NOWAIT);
-        printf("Sent %d: %d\n", message.process.id, status);
+        int snd = msgsnd(SchedulerQueueID, &message, sizeof(message.process),
+                         !IPC_NOWAIT);
+        if (snd == -1) {
+            perror("Error in send");
+            exit(1);
+        } else {
+            printf("Process %d sent\n", message.process.id);
+        }
     }
 
     //  7. Clear clock resources
-    clearResources(false);
+
+    // wait for all children to finish before clearing resources
+    wait(NULL);
+    clearResources();
 }
 
-void clearResources(int signum) {
+void clearResources() {
+    if (SchedulerQueueID != -1) {
+        msgctl(SchedulerQueueID, IPC_RMID, NULL);
+    }
     destroyClk(true);
     exit(0);
 }

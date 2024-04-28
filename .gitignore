@@ -51,5 +51,9 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-# Macos
+# MacOS
 .DS_Store
+
+
+.vscode
+scheduler.log

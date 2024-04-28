@@ -24,7 +24,7 @@ int main(int agrc, char* argv[]) {
 
     destroyClk(false);
 
-    return 1;
+    return 0;
 }
 
 void sigtstp_handler() {

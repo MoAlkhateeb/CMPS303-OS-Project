@@ -1,138 +1,143 @@
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
-#include <sys/_types/_key_t.h>
-#include <sys/_types/_ssize_t.h>
 #include <sys/msg.h>
 #include <sys/wait.h>
 
 #include "headers.h"
-#include "linkedlist.h"
 #include "pri_queue.h"
+#include "process_table.h"
 
 #define outputFileName "scheduler.log"
 
-void addPCBtoPriQueue(PriQueue* priQueue, pcb* pcb,
+void addPCBtoPriQueue(PriQueue** priQueue, pcb* pcb,
                       enum schedulingAlgorithm algorithm);
 void printOutputStatus(char* filename, pcb* pcb);
+pcb* getProcess();
+
+int SchedulerQueueID = -1;
 
 int main(int argc, char* argv[]) {
-    // argv[1] -> Scheduling Type
-    // argv[2] -> ?Quantum
-
     enum schedulingAlgorithm algorithm = atoi(argv[1]);
     int quantum = atoi(argv[2]);
 
-    initClk();
     key_t key = ftok("headers.h", 10);
-    int msgq_id = msgget(key, 0666);
-    if (msgq_id == -1) {
+    SchedulerQueueID = msgget(key, 0666);
+    if (SchedulerQueueID == -1) {
         perror("Error in getting message queue");
         exit(-1);
     }
-    printf("SCHEDULER: Created message queue\n");
-
-    node* processTable = createList();
+    ProcessTable* processTable = createProcessTable();
     PriQueue* readyQueue = createPriQueue();
 
-    processMessage message;
+    initClk();
 
+    int startTime;
     pcb* runningProcess = NULL;
-    int startTime, endTime;
+
+    int prevTime = -1;
+
     while (true) {
-        int rcv =
-            msgrcv(msgq_id, &message, sizeof(message.process), 0, IPC_NOWAIT);
+        while (true) {
+            pcb* newProcess = getProcess();
+            if (!newProcess) break;
 
-        if (rcv != -1) {
-            printf("SCHEDULER: Received process %d, %d\n", message.process.id,
-                   message.process.arrivalTime);
-
-            addFront(&processTable, message.process);
-            addPCBtoPriQueue(readyQueue, processTable->pcb, algorithm);
-        } else if (errno == ENOMSG) {
-        } else {
-            fprintf(stderr, "Error in receive message\n");
-            exit(-1);
+            addPCBtoPriQueue(&readyQueue, newProcess, algorithm);
+            addPCBFront(&processTable, newProcess);
+            printf("[ENTERED]: id: %d\n", newProcess->id);
         }
 
-        pcb* nextProcess = popPriQueue(readyQueue);
-        if (nextProcess) printf("Next Process: %d\n", nextProcess->id);
+        // get highest priority process
+        pcb* nextProcess = popPriQueue(&readyQueue);
 
-        // TODO: What if next process is null but there is a running
-        // processes
+        // update wait time for process next in line
         if (nextProcess) {
-            // printf("Updating wait time for process %d\n", nextProcess->id);
-            nextProcess->waitTime =
+            int waitTime =
                 getClk() - nextProcess->arrivalTime -
                 (nextProcess->burstTime - nextProcess->remainingTime);
+            nextProcess->waitTime = (waitTime < 0) ? 0 : waitTime;
         }
+
+        // update remaining time for running process
         if (runningProcess) {
-            // printf("Updating remaining time for process %d\n",
-            // runningProcess->id);
-            runningProcess->remainingTime =
+            int remainingTime =
                 runningProcess->remainingTime - (getClk() - startTime);
+            runningProcess->remainingTime =
+                (remainingTime < 0) ? 0 : remainingTime;
         }
 
-        // stop previous process
-        // Stop during round robbin or if the current process is not the next
-        // process
-        if ((runningProcess && nextProcess && runningProcess != nextProcess) ||
-            (algorithm == RR && getClk() - startTime >= quantum)) {
-            printf("Stopping process %d\n", runningProcess->id);
-            runningProcess->state = STOPPED;
-            kill(runningProcess->pid, SIGTSTP);
-            printOutputStatus(outputFileName, runningProcess);
+        // stop current process if it's not the next process or quantum is over
+        if (algorithm != HPF) {
+            if ((runningProcess && nextProcess &&
+                 runningProcess != nextProcess) ||
+                (algorithm == RR && getClk() - startTime >= quantum)) {
+                runningProcess->state = STOPPED;
+                kill(runningProcess->pid, SIGTSTP);
+                printOutputStatus(outputFileName, runningProcess);
+            }
         }
 
-        // start current process
+        // star the next process
         if (nextProcess && nextProcess->pid == -1) {
-            printOutputStatus(outputFileName, nextProcess);
-
+            printf("[STARTED]: id: %d\n", nextProcess->id);
             int pid = fork();
-            nextProcess->pid = pid;
 
             char remainingTime[10];
             sprintf(remainingTime, "%d", nextProcess->remainingTime);
 
+            startTime = getClk();
             if (pid == 0) {
                 char* args[] = {"./process.out", remainingTime, NULL};
                 execv(args[0], args);
             }
+
+            nextProcess->pid = pid;
+            printOutputStatus(outputFileName, nextProcess);
+
+            runningProcess = nextProcess;
+
+        } else if (nextProcess && nextProcess->state == STOPPED) {
+            nextProcess->state = RESUMED;
+            kill(nextProcess->pid, SIGCONT);
+            printOutputStatus(outputFileName, nextProcess);
             startTime = getClk();
 
-        } else if (nextProcess) {
-            nextProcess->state = RESUMED;
-            printOutputStatus(outputFileName, nextProcess);
-            kill(nextProcess->pid, SIGCONT);
-            startTime = getClk();
+            runningProcess = nextProcess;
         }
 
-        runningProcess = nextProcess;
-
         if (runningProcess) {
-            int Stat;
-            int wpid = waitpid(runningProcess->pid, &Stat, WNOHANG);
-            if (WEXITSTATUS(Stat) == 1) {
-                printf("Process %d finished\n", runningProcess->id);
+            int Stat = INT_MAX;
+            int wpid;
+
+            if (algorithm == HPF)
+                wpid = waitpid(runningProcess->pid, &Stat, !WNOHANG);
+            else
+                wpid = waitpid(runningProcess->pid, &Stat, WNOHANG);
+
+            if (WEXITSTATUS(Stat) == 0) {
+                printf("[FINISHED]: id: %d\n", runningProcess->id);
                 runningProcess->state = FINISHED;
+                runningProcess->remainingTime = 0;
                 runningProcess->finishTime = getClk();
                 runningProcess->turnaroundTime =
                     runningProcess->finishTime - runningProcess->arrivalTime;
                 runningProcess->weightedTurnarounTime =
                     runningProcess->turnaroundTime /
                     (float)runningProcess->burstTime;
-                // deleteNode(processTable, runningProcess->id);
                 printOutputStatus(outputFileName, runningProcess);
+                deletePCB(&processTable, runningProcess->id);
+                runningProcess = NULL;
 
             } else {
-                addPCBtoPriQueue(readyQueue, runningProcess, algorithm);
+                addPCBtoPriQueue(&readyQueue, runningProcess, algorithm);
             }
         }
     }
-
     destroyClk(true);
+    return 0;
 }
 
-void addPCBtoPriQueue(PriQueue* priQueue, pcb* pcb,
+void addPCBtoPriQueue(PriQueue** priQueue, pcb* pcb,
                       enum schedulingAlgorithm algorithm) {
     switch (algorithm) {
         case RR:
@@ -164,7 +169,6 @@ void printOutputStatus(char* filename, pcb* pcb) {
         case FINISHED:
             sprintf(state, "finished");
             break;
-            break;
     }
 
     fprintf(file, "At time %d process %d %s arr %d total %d remain %d wait %d ",
@@ -176,4 +180,19 @@ void printOutputStatus(char* filename, pcb* pcb) {
                 pcb->weightedTurnarounTime);
     else
         fprintf(file, "\n");
+
+    fclose(file);
+}
+
+pcb* getProcess() {
+    processMessage message;
+    int rcv = msgrcv(SchedulerQueueID, &message, sizeof(message.process), 0,
+                     IPC_NOWAIT);
+
+    if (rcv == -1) return NULL;
+
+    pcb* newProcess = malloc(sizeof(pcb));
+    *newProcess = message.process;
+
+    return newProcess;
 }

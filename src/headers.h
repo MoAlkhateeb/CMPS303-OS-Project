@@ -1,7 +1,8 @@
 #pragma once
 
 #include <signal.h>
-#include <stdio.h> //if you don't use scanf/printf change this include
+#include <stdbool.h>
+#include <stdio.h>  //if you don't use scanf/printf change this include
 #include <stdlib.h>
 #include <sys/file.h>
 #include <sys/ipc.h>
@@ -12,13 +13,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <stdbool.h>
 
 #define SHKEY 300
 
 ///==============================
 // don't mess with this variable//
-int *shmaddr; //
+int *shmaddr;  //
 //===============================
 
 static int getClk() { return *shmaddr; }
@@ -29,14 +29,14 @@ static int getClk() { return *shmaddr; }
  * emulation!
  */
 static void initClk() {
-  int shmid = shmget(SHKEY, 4, 0444);
-  while ((int)shmid == -1) {
-    // Make sure that the clock exists
-    printf("Wait! The clock not initialized yet!\n");
-    sleep(1);
-    shmid = shmget(SHKEY, 4, 0444);
-  }
-  shmaddr = (int *)shmat(shmid, (void *)0, 0);
+    int shmid = shmget(SHKEY, 4, 0444);
+    while ((int)shmid == -1) {
+        // Make sure that the clock exists
+        printf("Wait! The clock not initialized yet!\n");
+        sleep(1);
+        shmid = shmget(SHKEY, 4, 0444);
+    }
+    shmaddr = (int *)shmat(shmid, (void *)0, 0);
 }
 
 /*
@@ -48,20 +48,15 @@ static void initClk() {
  */
 
 static void destroyClk(bool terminateAll) {
-  shmdt(shmaddr);
-  if (terminateAll) {
-    killpg(getpgrp(), SIGINT);
-  }
+    shmdt(shmaddr);
+    if (terminateAll) {
+        killpg(getpgrp(), SIGINT);
+    }
 }
 
-enum state{
-    STARTED,
-    RESUMED,
-    STOPPED,
-    FINISHED
-};
+enum state { STARTED, RESUMED, STOPPED, FINISHED };
 
-typedef struct pcb{
+typedef struct pcb {
     int id;
     int priority;
     int burstTime;
@@ -83,10 +78,4 @@ typedef struct processMessage {
     pcb process;
 } processMessage;
 
-
-enum schedulingAlgorithm
-{
-    HPF = 1,
-    SRTN,
-    RR
-};
+enum schedulingAlgorithm { HPF = 1, SRTN, RR };
