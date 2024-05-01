@@ -70,7 +70,7 @@ int main(int argc, char *argv[]) {
     sprintf(quantum_str, "%d", quantum);
     sprintf(algorithm_str, "%d", algorithm);
 
-    key_t key = ftok("headers.h", 10);
+    key_t key = ftok(MSGQUEUENAME, MSGQUEUEKEY);
     SchedulerQueueID = msgget(key, 0666 | IPC_CREAT);
     if (SchedulerQueueID == -1) {
         perror("Error in create");
@@ -119,9 +119,13 @@ int main(int argc, char *argv[]) {
         process.remainingTime = p[j].runningtime;
         process.waitTime = 0;
 
+        process.startTime = -1;
+        process.resumedTime = -1;
+        process.stoppedTime = -1;
+
         process.finishTime = -1;
         process.turnaroundTime = -1;
-        process.weightedTurnarounTime = -1;
+        process.weightedTurnaroundTime = -1;
 
         message.process = process;
 

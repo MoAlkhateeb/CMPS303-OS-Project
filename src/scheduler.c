@@ -8,78 +8,116 @@
 #include "pri_queue.h"
 #include "process_table.h"
 
-#define outputFileName "scheduler.log"
+#define schedulerLogFile "scheduler.log"
+#define schedulerPerfFile "scheduler.perf"
 
-void addPCBtoPriQueue(PriQueue** priQueue, pcb* pcb,
-                      enum schedulingAlgorithm algorithm);
-void printOutputStatus(char* filename, pcb* pcb, int time);
+void addPCBtoReadyQueue(PriQueue** priQueue, pcb* pcb,
+                        enum schedulingAlgorithm algorithm);
+void outputPerfFile(char* filename, int totalWaitingTime,
+                    int totalTurnaroundTime, int totalWeightedTurnaroundTime,
+                    int totalProcesses);
+void outputPCBLogEntry(char* filename, pcb* pcb, int time);
 pcb* getProcess();
 
 int SchedulerQueueID = -1;
 
+int totalWaitingTime = 0;
+int totalTurnaroundTime = 0;
+int totalWeightedTurnaroundTime = 0;
+int totalProcesses = 0;
+
 int main(int argc, char* argv[]) {
+    // get algorithm information from command line arguments
+    if (argc < 2) {
+        printf("Usage: %s <scheduling algorithm number> [<quantum>]\n",
+               argv[0]);
+        exit(1);
+    }
+
     enum schedulingAlgorithm algorithm = atoi(argv[1]);
+
+    if (algorithm == RR && argc < 3) {
+        printf("Usage: %s <scheduling algorithm number> [<quantum>]\n",
+               argv[0]);
+        exit(1);
+    }
+
     int quantum = atoi(argv[2]);
 
-    key_t key = ftok("headers.h", 10);
+    // establish connection with the message queue
+    key_t key = ftok(MSGQUEUENAME, MSGQUEUEKEY);
     SchedulerQueueID = msgget(key, 0666);
     if (SchedulerQueueID == -1) {
         perror("Error in getting message queue");
-        exit(-1);
+        exit(1);
     }
+
+    // create structures for the scheduler
     ProcessTable* processTable = createProcessTable();
     PriQueue* readyQueue = createPriQueue();
 
+    // initialize the clock
     initClk();
 
-    int startTime;
+    // holds a pointer to the current running process
     pcb* runningProcess = NULL;
 
-    int prevTime = -1;
-
+    // main scheduling loop
     while (true) {
+        // add all the new process arrived at the current clk time
         while (true) {
             pcb* newProcess = getProcess();
             if (!newProcess) break;
 
-            addPCBtoPriQueue(&readyQueue, newProcess, algorithm);
+            addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
             addPCBFront(&processTable, newProcess);
+            totalProcesses++;
             printf("[ENTERED]: id: %d\n", newProcess->id);
         }
 
+        // check if the running process has finished
         if (runningProcess) {
-            int Stat = INT_MAX;
-            int wpid;
+            int status;
 
-            if (algorithm == HPF)
-                wpid = waitpid(runningProcess->pid, &Stat, !WNOHANG);
-            else
-                wpid = waitpid(runningProcess->pid, &Stat, WNOHANG);
+            // if non-premptive wait for the process to finish
+            waitpid(runningProcess->pid, &status,
+                    (algorithm == HPF) ? !WNOHANG : WNOHANG);
 
-            if (WEXITSTATUS(Stat) == 0) {
+            // if the process has finished successfully update the pcb and log
+            if (WIFEXITED(status)) {
                 printf("[FINISHED]: id: %d\n", runningProcess->id);
                 runningProcess->state = FINISHED;
                 runningProcess->remainingTime = 0;
-                runningProcess->finishTime = getClk();
+                runningProcess->finishTime = runningProcess->waitTime +
+                                             runningProcess->burstTime +
+                                             runningProcess->arrivalTime;
                 runningProcess->turnaroundTime =
                     runningProcess->finishTime - runningProcess->arrivalTime;
-                runningProcess->weightedTurnarounTime =
+                runningProcess->weightedTurnaroundTime =
                     runningProcess->turnaroundTime /
                     (float)runningProcess->burstTime;
-                printOutputStatus(outputFileName, runningProcess,
+
+                totalWaitingTime += runningProcess->waitTime;
+                totalTurnaroundTime += runningProcess->turnaroundTime;
+                totalWeightedTurnaroundTime +=
+                    runningProcess->weightedTurnaroundTime;
+
+                outputPCBLogEntry(schedulerLogFile, runningProcess,
                                   runningProcess->finishTime);
                 deletePCB(&processTable, runningProcess->id);
                 runningProcess = NULL;
 
-            } else {
-                addPCBtoPriQueue(&readyQueue, runningProcess, algorithm);
+            }
+            // add the process back to the ready queue if it's not finished
+            else {
+                addPCBtoReadyQueue(&readyQueue, runningProcess, algorithm);
             }
         }
 
-        // get highest priority process
+        // the next process that should run
         pcb* nextProcess = popPriQueue(&readyQueue);
 
-        // update wait time for process next in line
+        // calculate the wait time for the process that will run next
         if (nextProcess) {
             int waitTime =
                 getClk() - nextProcess->arrivalTime -
@@ -87,50 +125,52 @@ int main(int argc, char* argv[]) {
             nextProcess->waitTime = (waitTime < 0) ? 0 : waitTime;
         }
 
-        // update remaining time for running process
-        if (runningProcess) {
-            int remainingTime =
-                runningProcess->remainingTime - (getClk() - startTime);
+        // stop current process if it's not the next process or quantum is over
+        if ((algorithm != HPF) && (runningProcess && nextProcess &&
+                                   runningProcess != nextProcess) ||
+            (algorithm == RR &&
+             getClk() - runningProcess->resumedTime >= quantum)) {
+            int remainingTime = runningProcess->remainingTime -
+                                (getClk() - runningProcess->startTime);
             runningProcess->remainingTime =
                 (remainingTime < 0) ? 0 : remainingTime;
+            runningProcess->state = STOPPED;
+            runningProcess->stoppedTime = getClk();
+            kill(runningProcess->pid, SIGTSTP);
+            outputPCBLogEntry(schedulerLogFile, runningProcess, getClk());
         }
 
-        // stop current process if it's not the next process or quantum is over
-        if (algorithm != HPF) {
-            int time = getClk();
-            if ((runningProcess && nextProcess &&
-                 runningProcess != nextProcess) ||
-                (algorithm == RR && time - startTime >= quantum)) {
-                runningProcess->state = STOPPED;
-                kill(runningProcess->pid, SIGTSTP);
-                printOutputStatus(outputFileName, runningProcess, time);
-            }
-        }
+        if (runningProcess) continue;
 
-        // star the next process
+        // start the next process
         if (nextProcess && nextProcess->pid == -1) {
             printf("[STARTED]: id: %d\n", nextProcess->id);
             int pid = fork();
 
+            nextProcess->startTime = getClk();
+            nextProcess->resumedTime = nextProcess->startTime;
+            nextProcess->state = STARTED;
+
             char remainingTime[10];
             sprintf(remainingTime, "%d", nextProcess->remainingTime);
 
-            startTime = getClk();
             if (pid == 0) {
                 char* args[] = {"./process.out", remainingTime, NULL};
                 execv(args[0], args);
             }
 
             nextProcess->pid = pid;
-            printOutputStatus(outputFileName, nextProcess, startTime);
+            outputPCBLogEntry(schedulerLogFile, nextProcess,
+                              nextProcess->startTime);
 
             runningProcess = nextProcess;
 
         } else if (nextProcess && nextProcess->state == STOPPED) {
-            startTime = getClk();
+            nextProcess->resumedTime = getClk();
             nextProcess->state = RESUMED;
             kill(nextProcess->pid, SIGCONT);
-            printOutputStatus(outputFileName, nextProcess, startTime);
+            outputPCBLogEntry(schedulerLogFile, nextProcess,
+                              nextProcess->resumedTime);
 
             runningProcess = nextProcess;
         }
@@ -139,8 +179,8 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
-void addPCBtoPriQueue(PriQueue** priQueue, pcb* pcb,
-                      enum schedulingAlgorithm algorithm) {
+void addPCBtoReadyQueue(PriQueue** priQueue, pcb* pcb,
+                        enum schedulingAlgorithm algorithm) {
     switch (algorithm) {
         case RR:
             insertPriQueue(priQueue, 10, pcb);
@@ -154,7 +194,7 @@ void addPCBtoPriQueue(PriQueue** priQueue, pcb* pcb,
     }
 }
 
-void printOutputStatus(char* filename, pcb* pcb, int time) {
+void outputPCBLogEntry(char* filename, pcb* pcb, int time) {
     FILE* file = fopen(filename, "a");
 
     char state[10];
@@ -179,11 +219,22 @@ void printOutputStatus(char* filename, pcb* pcb, int time) {
 
     if (pcb->state == FINISHED)
         fprintf(file, "TA %d WTA %.2f\n", pcb->turnaroundTime,
-                pcb->weightedTurnarounTime);
+                pcb->weightedTurnaroundTime);
     else
         fprintf(file, "\n");
 
     fclose(file);
+}
+
+void outputPerfFile(char* filename, int totalWaitingTime,
+                    int totalTurnaroundTime, int totalWeightedTurnaroundTime,
+                    int totalProcesses) {
+    FILE* file = fopen(filename, "w");
+
+    fprintf(file, "Avg WTA. = %.2f\n",
+            totalWeightedTurnaroundTime / (float)totalProcesses);
+    fprintf(file, "Avg Waiting = %.2f\n",
+            totalWaitingTime / (float)totalProcesses);
 }
 
 pcb* getProcess() {

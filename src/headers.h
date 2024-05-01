@@ -15,7 +15,8 @@
 #include <unistd.h>
 
 #define SHKEY 300
-
+#define MSGQUEUEKEY 100
+#define MSGQUEUENAME "headers.h"
 ///==============================
 // don't mess with this variable//
 int *shmaddr;  //
@@ -63,13 +64,17 @@ typedef struct pcb {
     int arrivalTime;
     enum state state;
 
+    int startTime;
+    int stoppedTime;
+    int resumedTime;
+    int finishTime;
+
     int pid;
     int remainingTime;
-
     int waitTime;
-    int finishTime;
+
     int turnaroundTime;
-    float weightedTurnarounTime;
+    float weightedTurnaroundTime;
 } pcb;
 
 typedef struct processMessage {
