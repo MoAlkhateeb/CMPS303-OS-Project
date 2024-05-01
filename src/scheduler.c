@@ -24,25 +24,30 @@ int SchedulerQueueID = -1;
 int totalWaitingTime = 0;
 int totalTurnaroundTime = 0;
 int totalWeightedTurnaroundTime = 0;
-int totalProcesses = 0;
+int countProcesses = 0;
 
 int main(int argc, char* argv[]) {
     // get algorithm information from command line arguments
-    if (argc < 2) {
-        printf("Usage: %s <scheduling algorithm number> [<quantum>]\n",
-               argv[0]);
+    if (argc < 3) {
+        printf(
+            "Usage: %s <num processes> <scheduling algorithm number>"
+            "[<quantum>]\n",
+            argv[0]);
         exit(1);
     }
 
-    enum schedulingAlgorithm algorithm = atoi(argv[1]);
+    int totalProcesses = atoi(argv[1]);
+    enum schedulingAlgorithm algorithm = atoi(argv[2]);
 
-    if (algorithm == RR && argc < 3) {
-        printf("Usage: %s <scheduling algorithm number> [<quantum>]\n",
-               argv[0]);
+    if (algorithm == RR && argc < 4) {
+        printf(
+            "Usage: %s <num processes> <scheduling algorithm number> "
+            "[<quantum>]\n",
+            argv[0]);
         exit(1);
     }
 
-    int quantum = atoi(argv[2]);
+    int quantum = atoi(argv[3]);
 
     // establish connection with the message queue
     key_t key = ftok(MSGQUEUENAME, MSGQUEUEKEY);
@@ -55,6 +60,11 @@ int main(int argc, char* argv[]) {
     // create structures for the scheduler
     ProcessTable* processTable = createProcessTable();
     PriQueue* readyQueue = createPriQueue();
+
+    // output headers for the log file
+    FILE* file = fopen(schedulerLogFile, "w");
+    fprintf(file, "#At time x process y state arr w total z remain y wait k\n");
+    fclose(file);
 
     // initialize the clock
     initClk();
@@ -71,7 +81,7 @@ int main(int argc, char* argv[]) {
 
             addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
             addPCBFront(&processTable, newProcess);
-            totalProcesses++;
+            countProcesses++;
             printf("[ENTERED]: id: %d\n", newProcess->id);
         }
 
@@ -174,7 +184,11 @@ int main(int argc, char* argv[]) {
 
             runningProcess = nextProcess;
         }
+
+        if (!runningProcess && !nextProcess && countProcesses == totalProcesses)
+            break;
     }
+
     destroyClk(true);
     return 0;
 }

@@ -27,15 +27,15 @@ int main(int argc, char *argv[]) {
     }
 
     char line[100];
-    int line_count = 0;
+    int num_processes = 0;
     while (fgets(line, sizeof(line), file)) {
         if (line[0] != '#') {
-            line_count = line_count + 1;
+            num_processes = num_processes + 1;
         }
     }
     fseek(file, 0, SEEK_SET);
 
-    struct processData *p = malloc(sizeof(struct processData) * line_count);
+    struct processData *p = malloc(sizeof(struct processData) * num_processes);
     int i = 0;
     while (fgets(line, sizeof(line), file)) {
         if (line[0] == '#') {
@@ -66,9 +66,10 @@ int main(int argc, char *argv[]) {
         scanf("%d", &quantum);
     }
 
-    char quantum_str[10], algorithm_str[10];
+    char quantum_str[10], algorithm_str[10], num_processes_str[10];
     sprintf(quantum_str, "%d", quantum);
     sprintf(algorithm_str, "%d", algorithm);
+    sprintf(num_processes_str, "%d", num_processes);
 
     key_t key = ftok(MSGQUEUENAME, MSGQUEUEKEY);
     SchedulerQueueID = msgget(key, 0666 | IPC_CREAT);
@@ -89,7 +90,8 @@ int main(int argc, char *argv[]) {
 
     pid = fork();
     if (pid == 0) {
-        char *args[] = {"./scheduler.out", algorithm_str, quantum_str, NULL};
+        char *args[] = {"./scheduler.out", num_processes_str, algorithm_str,
+                        quantum_str, NULL};
         execv(args[0], args);
     }
 
