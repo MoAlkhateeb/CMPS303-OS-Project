@@ -49,6 +49,8 @@ int main(int argc, char* argv[]) {
 
     int quantum = atoi(argv[3]);
 
+    printf("SCHEDULER: Quantum: %d\n", quantum);
+
     // establish connection with the message queue
     key_t key = ftok(MSGQUEUENAME, MSGQUEUEKEY);
     SchedulerQueueID = msgget(key, 0666);
@@ -74,7 +76,7 @@ int main(int argc, char* argv[]) {
 
     // main scheduling loop
     while (true) {
-        // add all the new process arrived at the current clk time
+        // add all the new processes arrived at the current clk time
         while (true) {
             pcb* newProcess = getProcess();
             if (!newProcess) break;
@@ -85,6 +87,13 @@ int main(int argc, char* argv[]) {
             printf("[ENTERED]: id: %d %d\n", newProcess->id,
                    newProcess->remainingTime);
         }
+
+        bool quantumOver;
+
+        do {
+            quantumOver = runningProcess &&
+                          (getClk() - runningProcess->resumedTime) >= quantum;
+        } while (runningProcess && !quantumOver && algorithm == RR);
 
         // check if the running process has finished
         if (runningProcess) {
@@ -132,10 +141,15 @@ int main(int argc, char* argv[]) {
         }
 
         // the next process that should run
+
         pcb* nextProcess = popPriQueue(&readyQueue);
 
-        // update the remaining time for the current process
+        bool currentNotSameAsNext =
+            runningProcess && nextProcess && runningProcess != nextProcess;
+
         int time = getClk();
+
+        // update the remaining time for the current process
         if (runningProcess &&
             runningProcess->stoppedTime <= runningProcess->resumedTime) {
             int remainingTime = runningProcess->remainingTimeAfterStop -
@@ -152,11 +166,10 @@ int main(int argc, char* argv[]) {
             nextProcess->waitTime = (waitTime < 0) ? 0 : waitTime;
         }
 
-        // stop current process if it's not the next process or quantum is over
-        if ((algorithm != HPF) && (runningProcess && nextProcess &&
-                                   runningProcess != nextProcess) ||
-            (algorithm == RR &&
-             getClk() - runningProcess->resumedTime >= quantum)) {
+        // stop current process if it's not the next process or quantum
+        // is over
+        if ((algorithm == SRTN && currentNotSameAsNext) ||
+            (algorithm == RR && quantumOver && currentNotSameAsNext)) {
             printf("[STOPPED]: id: %d %d %d\n", runningProcess->id, getClk(),
                    runningProcess->remainingTime);
             runningProcess->state = STOPPED;
@@ -207,8 +220,10 @@ int main(int argc, char* argv[]) {
             runningProcess = nextProcess;
         }
 
-        if (!runningProcess && !nextProcess && countProcesses == totalProcesses)
+        if (!runningProcess && !nextProcess &&
+            countProcesses == totalProcesses) {
             break;
+        }
     }
 
     destroyClk(true);
