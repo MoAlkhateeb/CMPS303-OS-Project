@@ -1,6 +1,6 @@
-#include <math.h>
 #include <errno.h>
 #include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <sys/msg.h>
 #include <sys/wait.h>
@@ -15,7 +15,8 @@
 pcb* getProcess();
 void outputPerfFile(char* filename);
 void outputPCBLogEntry(char* filename, pcb* pcb, int time);
-void addPCBtoReadyQueue(PriQueue** priQueue, pcb* pcb, enum schedulingAlgorithm algorithm);
+void addPCBtoReadyQueue(PriQueue** priQueue, pcb* pcb,
+                        enum schedulingAlgorithm algorithm);
 
 int SchedulerQueueID = -1;
 
@@ -114,16 +115,25 @@ int main(int argc, char* argv[]) {
                        getClk(), runningProcess->remainingTime);
                 runningProcess->state = FINISHED;
                 runningProcess->remainingTime = 0;
-                runningProcess->finishTime = runningProcess->waitTime + runningProcess->burstTime + runningProcess->arrivalTime;
-                runningProcess->turnaroundTime = runningProcess->finishTime - runningProcess->arrivalTime;
-                runningProcess->weightedTurnaroundTime = runningProcess->turnaroundTime / (float)runningProcess->burstTime;
+                runningProcess->finishTime = runningProcess->waitTime +
+                                             runningProcess->burstTime +
+                                             runningProcess->arrivalTime;
+                runningProcess->turnaroundTime =
+                    runningProcess->finishTime - runningProcess->arrivalTime;
+                runningProcess->weightedTurnaroundTime =
+                    runningProcess->turnaroundTime /
+                    (float)runningProcess->burstTime;
                 totalBurstTime += runningProcess->burstTime;
                 totalWaitingTime += runningProcess->waitTime;
                 totalTurnaroundTime += runningProcess->turnaroundTime;
-                totalWeightedTurnaroundTime += runningProcess->weightedTurnaroundTime;
-                totalWeightedTurnaroundTimeSquared += runningProcess->weightedTurnaroundTime * runningProcess->weightedTurnaroundTime;
+                totalWeightedTurnaroundTime +=
+                    runningProcess->weightedTurnaroundTime;
+                totalWeightedTurnaroundTimeSquared +=
+                    runningProcess->weightedTurnaroundTime *
+                    runningProcess->weightedTurnaroundTime;
 
-                outputPCBLogEntry(schedulerLogFile, runningProcess, runningProcess->finishTime);
+                outputPCBLogEntry(schedulerLogFile, runningProcess,
+                                  runningProcess->finishTime);
                 deletePCB(&processTable, runningProcess->id);
                 runningProcess = NULL;
 
@@ -276,18 +286,22 @@ void outputPCBLogEntry(char* filename, pcb* pcb, int time) {
 void outputPerfFile(char* filename) {
     FILE* file = fopen(filename, "w");
 
-    float avgWeightedTurnaroundTime = totalWeightedTurnaroundTime / (float)countProcesses;
-    fprintf(file, "CPU utilization = %.2f\n", (float) totalBurstTime / getClk() * 100);
+    float avgWeightedTurnaroundTime =
+        totalWeightedTurnaroundTime / (float)countProcesses;
+    fprintf(file, "CPU utilization = %.2f\n",
+            (float)totalBurstTime / getClk() * 100);
     fprintf(file, "Avg WTA. = %.2f\n", avgWeightedTurnaroundTime);
-    fprintf(file, "Avg Waiting = %.2f\n", totalWaitingTime / (float)countProcesses);
-
+    fprintf(file, "Avg Waiting = %.2f\n",
+            totalWaitingTime / (float)countProcesses);
 
     // STD DEV
     // WTA1^2 - 2WTA1*avgWTA + avgWTA^2
     // WTA^2/totalProcesses - 2WTA*avgTA/totalProcesses + avgWTA^2
     // WTA^2/totalProcesses - avgWTA^2
 
-    fprintf(file, "Std WTA = %.2f\n", sqrt((totalWeightedTurnaroundTimeSquared / (float)countProcesses) - (avgWeightedTurnaroundTime * avgWeightedTurnaroundTime)));
+    fprintf(file, "Std WTA = %.2f\n",
+            sqrt((totalWeightedTurnaroundTimeSquared / (float)countProcesses) -
+                 (avgWeightedTurnaroundTime * avgWeightedTurnaroundTime)));
 
     fclose(file);
 }
