@@ -16,7 +16,7 @@ struct processData {
 
 int SchedulerQueueID = -1;
 
-int main(int argc, char *argv[]) {
+int main() {
     signal(SIGINT, clearResources);
 
     // 1. Read the algorithm files.
@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
     int algorithm;
     scanf("%d", &algorithm);
 
-    int quantum;
+    int quantum = 2;
     if (algorithm == RR) {
         printf("Round robin quantum?\n");
         scanf("%d", &quantum);
@@ -103,7 +103,6 @@ int main(int argc, char *argv[]) {
     //  parameters.
 
     //  6. Send the information to the scheduler at the appropriate time.
-    int time;
     for (int j = 0; j < i; j++) {
         if (getClk() < p[j].arrivaltime) {
             sleep(p[j].arrivaltime - getClk());

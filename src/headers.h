@@ -19,7 +19,7 @@
 #define MSGQUEUENAME "headers.h"
 ///==============================
 // don't mess with this variable//
-int *shmaddr;  //
+static int *shmaddr;  //
 //===============================
 
 static int getClk() { return *shmaddr; }

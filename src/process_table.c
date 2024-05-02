@@ -33,7 +33,6 @@ void printProcessTable(ProcessTable *list) {
 }
 
 void addPCBFront(ProcessTable **list, pcb *pcb) {
-    node *current = NULL;
     if ((*list)->head == NULL) {
         (*list)->head = createNode(pcb);
     } else {
