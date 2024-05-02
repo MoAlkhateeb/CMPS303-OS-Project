@@ -77,18 +77,6 @@ int main(int argc, char* argv[]) {
 
     // main scheduling loop
     while (true) {
-        // add all the new processes arrived at the current clk time
-        while (true) {
-            pcb* newProcess = getProcess();
-            if (!newProcess) break;
-
-            addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
-            addPCBFront(&processTable, newProcess);
-            countProcesses++;
-            printf("[ENTERED]: id: %d %d\n", newProcess->id,
-                   newProcess->remainingTime);
-        }
-
         bool quantumOver;
 
         do {
@@ -142,6 +130,18 @@ int main(int argc, char* argv[]) {
             else {
                 addPCBtoReadyQueue(&readyQueue, runningProcess, algorithm);
             }
+        }
+
+        // add all the new processes arrived at the current clk time
+        while (true) {
+            pcb* newProcess = getProcess();
+            if (!newProcess) break;
+
+            addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
+            addPCBFront(&processTable, newProcess);
+            countProcesses++;
+            printf("[ENTERED]: id: %d %d\n", newProcess->id,
+                   newProcess->remainingTime);
         }
 
         // the next process that should run
