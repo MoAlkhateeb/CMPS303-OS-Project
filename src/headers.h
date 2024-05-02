@@ -70,6 +70,8 @@ typedef struct pcb {
     int finishTime;
 
     int pid;
+
+    int remainingTimeAfterStop;
     int remainingTime;
     int waitTime;
 

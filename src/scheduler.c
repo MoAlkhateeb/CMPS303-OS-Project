@@ -82,20 +82,27 @@ int main(int argc, char* argv[]) {
             addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
             addPCBFront(&processTable, newProcess);
             countProcesses++;
-            printf("[ENTERED]: id: %d\n", newProcess->id);
+            printf("[ENTERED]: id: %d %d\n", newProcess->id,
+                   newProcess->remainingTime);
         }
 
         // check if the running process has finished
         if (runningProcess) {
-            int status;
+            int status, p;
 
             // if non-premptive wait for the process to finish
-            waitpid(runningProcess->pid, &status,
-                    (algorithm == HPF) ? !WNOHANG : WNOHANG);
+            if (algorithm == HPF)
+                p = waitpid(runningProcess->pid, &status, !WNOHANG);
+            else
+                p = waitpid(runningProcess->pid, &status, WNOHANG);
 
+            // status is only set if p > 0.
             // if the process has finished successfully update the pcb and log
-            if (WIFEXITED(status)) {
-                printf("[FINISHED]: id: %d\n", runningProcess->id);
+            if (p > 0 && WIFEXITED(status)) {
+                printf("The pid is %d. The exit code is %d. IFEXITED IS %d\n",
+                       p, WEXITSTATUS(status), WIFEXITED(status));
+                printf("[FINISHED]: id: %d %d %d\n", runningProcess->id,
+                       getClk(), runningProcess->remainingTime);
                 runningProcess->state = FINISHED;
                 runningProcess->remainingTime = 0;
                 runningProcess->finishTime = runningProcess->waitTime +
@@ -127,10 +134,20 @@ int main(int argc, char* argv[]) {
         // the next process that should run
         pcb* nextProcess = popPriQueue(&readyQueue);
 
+        // update the remaining time for the current process
+        int time = getClk();
+        if (runningProcess &&
+            runningProcess->stoppedTime <= runningProcess->resumedTime) {
+            int remainingTime = runningProcess->remainingTimeAfterStop -
+                                (time - runningProcess->resumedTime);
+            runningProcess->remainingTime =
+                (remainingTime < 0) ? 0 : remainingTime;
+        }
+
         // calculate the wait time for the process that will run next
-        if (nextProcess) {
+        if (nextProcess && nextProcess != runningProcess) {
             int waitTime =
-                getClk() - nextProcess->arrivalTime -
+                time - nextProcess->arrivalTime -
                 (nextProcess->burstTime - nextProcess->remainingTime);
             nextProcess->waitTime = (waitTime < 0) ? 0 : waitTime;
         }
@@ -140,21 +157,24 @@ int main(int argc, char* argv[]) {
                                    runningProcess != nextProcess) ||
             (algorithm == RR &&
              getClk() - runningProcess->resumedTime >= quantum)) {
-            int remainingTime = runningProcess->remainingTime -
-                                (getClk() - runningProcess->startTime);
-            runningProcess->remainingTime =
-                (remainingTime < 0) ? 0 : remainingTime;
+            printf("[STOPPED]: id: %d %d %d\n", runningProcess->id, getClk(),
+                   runningProcess->remainingTime);
             runningProcess->state = STOPPED;
             runningProcess->stoppedTime = getClk();
-            kill(runningProcess->pid, SIGTSTP);
+            runningProcess->remainingTimeAfterStop =
+                runningProcess->remainingTime;
+            kill(runningProcess->pid, SIGSTOP);
             outputPCBLogEntry(schedulerLogFile, runningProcess, getClk());
+            runningProcess = NULL;
         }
 
+        // ensure no processes are started when there is a running processes
         if (runningProcess) continue;
 
         // start the next process
         if (nextProcess && nextProcess->pid == -1) {
-            printf("[STARTED]: id: %d\n", nextProcess->id);
+            printf("[STARTED]: id: %d %d %d\n", nextProcess->id, getClk(),
+                   nextProcess->remainingTime);
             int pid = fork();
 
             nextProcess->startTime = getClk();
@@ -176,6 +196,8 @@ int main(int argc, char* argv[]) {
             runningProcess = nextProcess;
 
         } else if (nextProcess && nextProcess->state == STOPPED) {
+            printf("[RESUMED]: id: %d %d %d\n", nextProcess->id, getClk(),
+                   nextProcess->remainingTime);
             nextProcess->resumedTime = getClk();
             nextProcess->state = RESUMED;
             kill(nextProcess->pid, SIGCONT);

@@ -125,6 +125,7 @@ int main(int argc, char *argv[]) {
         process.resumedTime = -1;
         process.stoppedTime = -1;
 
+        process.remainingTimeAfterStop = process.remainingTime;
         process.finishTime = -1;
         process.turnaroundTime = -1;
         process.weightedTurnaroundTime = -1;
