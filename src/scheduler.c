@@ -1,3 +1,4 @@
+#include <math.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
@@ -11,19 +12,18 @@
 #define schedulerLogFile "scheduler.log"
 #define schedulerPerfFile "scheduler.perf"
 
-void addPCBtoReadyQueue(PriQueue** priQueue, pcb* pcb,
-                        enum schedulingAlgorithm algorithm);
-void outputPerfFile(char* filename, int totalWaitingTime,
-                    int totalTurnaroundTime, int totalWeightedTurnaroundTime,
-                    int totalProcesses);
-void outputPCBLogEntry(char* filename, pcb* pcb, int time);
 pcb* getProcess();
+void outputPerfFile(char* filename);
+void outputPCBLogEntry(char* filename, pcb* pcb, int time);
+void addPCBtoReadyQueue(PriQueue** priQueue, pcb* pcb, enum schedulingAlgorithm algorithm);
 
 int SchedulerQueueID = -1;
 
 int totalWaitingTime = 0;
 int totalTurnaroundTime = 0;
-int totalWeightedTurnaroundTime = 0;
+float totalWeightedTurnaroundTime = 0;
+float totalWeightedTurnaroundTimeSquared = 0;
+int totalBurstTime = 0;
 int countProcesses = 0;
 
 int main(int argc, char* argv[]) {
@@ -97,39 +97,33 @@ int main(int argc, char* argv[]) {
 
         // check if the running process has finished
         if (runningProcess) {
-            int status, p;
+            int status, pid;
 
             // if non-premptive wait for the process to finish
             if (algorithm == HPF)
-                p = waitpid(runningProcess->pid, &status, !WNOHANG);
+                pid = waitpid(runningProcess->pid, &status, !WNOHANG);
             else
-                p = waitpid(runningProcess->pid, &status, WNOHANG);
+                pid = waitpid(runningProcess->pid, &status, WNOHANG);
 
-            // status is only set if p > 0.
+            // status is only set if pid > 0.
             // if the process has finished successfully update the pcb and log
-            if (p > 0 && WIFEXITED(status)) {
+            if (pid > 0 && WIFEXITED(status)) {
                 printf("The pid is %d. The exit code is %d. IFEXITED IS %d\n",
-                       p, WEXITSTATUS(status), WIFEXITED(status));
+                       pid, WEXITSTATUS(status), WIFEXITED(status));
                 printf("[FINISHED]: id: %d %d %d\n", runningProcess->id,
                        getClk(), runningProcess->remainingTime);
                 runningProcess->state = FINISHED;
                 runningProcess->remainingTime = 0;
-                runningProcess->finishTime = runningProcess->waitTime +
-                                             runningProcess->burstTime +
-                                             runningProcess->arrivalTime;
-                runningProcess->turnaroundTime =
-                    runningProcess->finishTime - runningProcess->arrivalTime;
-                runningProcess->weightedTurnaroundTime =
-                    runningProcess->turnaroundTime /
-                    (float)runningProcess->burstTime;
-
+                runningProcess->finishTime = runningProcess->waitTime + runningProcess->burstTime + runningProcess->arrivalTime;
+                runningProcess->turnaroundTime = runningProcess->finishTime - runningProcess->arrivalTime;
+                runningProcess->weightedTurnaroundTime = runningProcess->turnaroundTime / (float)runningProcess->burstTime;
+                totalBurstTime += runningProcess->burstTime;
                 totalWaitingTime += runningProcess->waitTime;
                 totalTurnaroundTime += runningProcess->turnaroundTime;
-                totalWeightedTurnaroundTime +=
-                    runningProcess->weightedTurnaroundTime;
+                totalWeightedTurnaroundTime += runningProcess->weightedTurnaroundTime;
+                totalWeightedTurnaroundTimeSquared += runningProcess->weightedTurnaroundTime * runningProcess->weightedTurnaroundTime;
 
-                outputPCBLogEntry(schedulerLogFile, runningProcess,
-                                  runningProcess->finishTime);
+                outputPCBLogEntry(schedulerLogFile, runningProcess, runningProcess->finishTime);
                 deletePCB(&processTable, runningProcess->id);
                 runningProcess = NULL;
 
@@ -143,9 +137,6 @@ int main(int argc, char* argv[]) {
         // the next process that should run
 
         pcb* nextProcess = popPriQueue(&readyQueue);
-
-        bool currentNotSameAsNext =
-            runningProcess && nextProcess && runningProcess != nextProcess;
 
         int time = getClk();
 
@@ -165,6 +156,9 @@ int main(int argc, char* argv[]) {
                 (nextProcess->burstTime - nextProcess->remainingTime);
             nextProcess->waitTime = (waitTime < 0) ? 0 : waitTime;
         }
+
+        bool currentNotSameAsNext =
+            runningProcess && nextProcess && runningProcess != nextProcess;
 
         // stop current process if it's not the next process or quantum
         // is over
@@ -225,7 +219,9 @@ int main(int argc, char* argv[]) {
             break;
         }
     }
-
+    outputPerfFile(schedulerPerfFile);
+    destroyPriQueue(&readyQueue);
+    destroyProcessTable(processTable);
     destroyClk(true);
     return 0;
 }
@@ -277,15 +273,23 @@ void outputPCBLogEntry(char* filename, pcb* pcb, int time) {
     fclose(file);
 }
 
-void outputPerfFile(char* filename, int totalWaitingTime,
-                    int totalTurnaroundTime, int totalWeightedTurnaroundTime,
-                    int totalProcesses) {
+void outputPerfFile(char* filename) {
     FILE* file = fopen(filename, "w");
 
-    fprintf(file, "Avg WTA. = %.2f\n",
-            totalWeightedTurnaroundTime / (float)totalProcesses);
-    fprintf(file, "Avg Waiting = %.2f\n",
-            totalWaitingTime / (float)totalProcesses);
+    float avgWeightedTurnaroundTime = totalWeightedTurnaroundTime / (float)countProcesses;
+    fprintf(file, "CPU utilization = %.2f\n", (float) totalBurstTime / getClk() * 100);
+    fprintf(file, "Avg WTA. = %.2f\n", avgWeightedTurnaroundTime);
+    fprintf(file, "Avg Waiting = %.2f\n", totalWaitingTime / (float)countProcesses);
+
+
+    // STD DEV
+    // WTA1^2 - 2WTA1*avgWTA + avgWTA^2
+    // WTA^2/totalProcesses - 2WTA*avgTA/totalProcesses + avgWTA^2
+    // WTA^2/totalProcesses - avgWTA^2
+
+    fprintf(file, "Std WTA = %.2f\n", sqrt((totalWeightedTurnaroundTimeSquared / (float)countProcesses) - (avgWeightedTurnaroundTime * avgWeightedTurnaroundTime)));
+
+    fclose(file);
 }
 
 pcb* getProcess() {
