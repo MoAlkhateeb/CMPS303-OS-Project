@@ -16,6 +16,7 @@ pcb* getProcess();
 void outputPerfFile(char* filename);
 void outputPCBLogEntry(char* filename, pcb* pcb, int time);
 void addPCBtoReadyQueue(PriQueue** priQueue, pcb* pcb, enum schedulingAlgorithm algorithm);
+void finishProcess(pcb* runningProcess, enum schedulingAlgorithm algorithm, ProcessTable** processTable, PriQueue** readyQueue);
 
 int SchedulerQueueID = -1;
 
@@ -96,43 +97,7 @@ int main(int argc, char* argv[]) {
         } while (runningProcess && !quantumOver && algorithm == RR);
 
         // check if the running process has finished
-        if (runningProcess) {
-            int status, pid;
-
-            // if non-premptive wait for the process to finish
-            if (algorithm == HPF)
-                pid = waitpid(runningProcess->pid, &status, !WNOHANG);
-            else
-                pid = waitpid(runningProcess->pid, &status, WNOHANG);
-
-            // status is only set if pid > 0.
-            // if the process has finished successfully update the pcb and log
-            if (pid > 0 && WIFEXITED(status)) {
-                printf("The pid is %d. The exit code is %d. IFEXITED IS %d\n",
-                       pid, WEXITSTATUS(status), WIFEXITED(status));
-                printf("[FINISHED]: id: %d %d %d\n", runningProcess->id,
-                       getClk(), runningProcess->remainingTime);
-                runningProcess->state = FINISHED;
-                runningProcess->remainingTime = 0;
-                runningProcess->finishTime = runningProcess->waitTime + runningProcess->burstTime + runningProcess->arrivalTime;
-                runningProcess->turnaroundTime = runningProcess->finishTime - runningProcess->arrivalTime;
-                runningProcess->weightedTurnaroundTime = runningProcess->turnaroundTime / (float)runningProcess->burstTime;
-                totalBurstTime += runningProcess->burstTime;
-                totalWaitingTime += runningProcess->waitTime;
-                totalTurnaroundTime += runningProcess->turnaroundTime;
-                totalWeightedTurnaroundTime += runningProcess->weightedTurnaroundTime;
-                totalWeightedTurnaroundTimeSquared += runningProcess->weightedTurnaroundTime * runningProcess->weightedTurnaroundTime;
-
-                outputPCBLogEntry(schedulerLogFile, runningProcess, runningProcess->finishTime);
-                deletePCB(&processTable, runningProcess->id);
-                runningProcess = NULL;
-
-            }
-            // add the process back to the ready queue if it's not finished
-            else {
-                addPCBtoReadyQueue(&readyQueue, runningProcess, algorithm);
-            }
-        }
+        finishProcess(runningProcess, algorithm, &processTable, &readyQueue);
 
         // the next process that should run
 
@@ -164,15 +129,20 @@ int main(int argc, char* argv[]) {
         // is over
         if ((algorithm == SRTN && currentNotSameAsNext) ||
             (algorithm == RR && quantumOver && currentNotSameAsNext)) {
-            printf("[STOPPED]: id: %d %d %d\n", runningProcess->id, getClk(),
-                   runningProcess->remainingTime);
-            runningProcess->state = STOPPED;
-            runningProcess->stoppedTime = getClk();
-            runningProcess->remainingTimeAfterStop =
-                runningProcess->remainingTime;
-            kill(runningProcess->pid, SIGSTOP);
-            outputPCBLogEntry(schedulerLogFile, runningProcess, getClk());
-            runningProcess = NULL;
+                if(runningProcess->remainingTime == 0){
+                    finishProcess(runningProcess, algorithm, &processTable, &readyQueue);
+                }
+                else{
+                    printf("[STOPPED]: id: %d %d %d\n", runningProcess->id, getClk(),
+                    runningProcess->remainingTime);
+                    runningProcess->state = STOPPED;
+                    runningProcess->stoppedTime = getClk();
+                    runningProcess->remainingTimeAfterStop =
+                    runningProcess->remainingTime;
+                    kill(runningProcess->pid, SIGSTOP);
+                    outputPCBLogEntry(schedulerLogFile, runningProcess, getClk());
+                    runningProcess = NULL;
+                }
         }
 
         // ensure no processes are started when there is a running processes
@@ -292,6 +262,46 @@ void outputPerfFile(char* filename) {
     fclose(file);
 }
 
+void finishProcess(pcb* runningProcess, enum schedulingAlgorithm algorithm,
+                    ProcessTable** processTable, PriQueue** readyQueue){
+    if (runningProcess) {
+            int status, pid;
+
+            // if non-premptive wait for the process to finish
+            if (algorithm == HPF)
+                pid = waitpid(runningProcess->pid, &status, !WNOHANG);
+            else
+                pid = waitpid(runningProcess->pid, &status, WNOHANG);
+
+            // status is only set if pid > 0.
+            // if the process has finished successfully update the pcb and log
+            if (pid > 0 && WIFEXITED(status)) {
+                printf("The pid is %d. The exit code is %d. IFEXITED IS %d\n",
+                       pid, WEXITSTATUS(status), WIFEXITED(status));
+                printf("[FINISHED]: id: %d %d %d\n", runningProcess->id,
+                       getClk(), runningProcess->remainingTime);
+                runningProcess->state = FINISHED;
+                runningProcess->remainingTime = 0;
+                runningProcess->finishTime = runningProcess->waitTime + runningProcess->burstTime + runningProcess->arrivalTime;
+                runningProcess->turnaroundTime = runningProcess->finishTime - runningProcess->arrivalTime;
+                runningProcess->weightedTurnaroundTime = runningProcess->turnaroundTime / (float)runningProcess->burstTime;
+                totalBurstTime += runningProcess->burstTime;
+                totalWaitingTime += runningProcess->waitTime;
+                totalTurnaroundTime += runningProcess->turnaroundTime;
+                totalWeightedTurnaroundTime += runningProcess->weightedTurnaroundTime;
+                totalWeightedTurnaroundTimeSquared += runningProcess->weightedTurnaroundTime * runningProcess->weightedTurnaroundTime;
+
+                outputPCBLogEntry(schedulerLogFile, runningProcess, runningProcess->finishTime);
+                deletePCB(processTable, runningProcess->id);
+                runningProcess = NULL;
+
+            }
+            // add the process back to the ready queue if it's not finished
+            else {
+                addPCBtoReadyQueue(readyQueue, runningProcess, algorithm);
+            }
+}
+}
 pcb* getProcess() {
     processMessage message;
     int rcv = msgrcv(SchedulerQueueID, &message, sizeof(message.process), 0,
