@@ -81,13 +81,22 @@ int main(int argc, char* argv[]) {
         bool quantumOver;
 
         do {
+            int waitTime = quantum;
+            if (runningProcess) {
+                if (quantum < runningProcess->remainingTime)
+                    waitTime = quantum;
+                else
+                    waitTime = runningProcess->remainingTime;
+            }
             quantumOver = runningProcess &&
-                          (getClk() - runningProcess->resumedTime) >= quantum;
+                          (getClk() - runningProcess->resumedTime) >= waitTime;
         } while (runningProcess && !quantumOver && algorithm == RR);
 
         // check if the running process has finished
         if (runningProcess) {
             if (finishProcess(runningProcess, algorithm)) {
+                printf("[CHECKING1]: id: %d %d %d\n", runningProcess->id,
+                       getClk(), runningProcess->remainingTime);
                 outputPCBLogEntry(schedulerLogFile, runningProcess,
                                   runningProcess->finishTime);
                 deletePCB(&processTable, runningProcess->id);
@@ -97,6 +106,9 @@ int main(int argc, char* argv[]) {
             // add the process back to the ready queue if it's not finished
             else {
                 addPCBtoReadyQueue(&readyQueue, runningProcess, algorithm);
+                if (runningProcess) {
+                    printf("[ADDED1]: id: %d\n", runningProcess->id);
+                }
             }
         }
 
@@ -106,6 +118,9 @@ int main(int argc, char* argv[]) {
             if (!newProcess) break;
 
             addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
+            if (newProcess) {
+                printf("[ADDED2]: id: %d\n", newProcess->id);
+            }
             addPCBFront(&processTable, newProcess);
             countProcesses++;
             printf("[ENTERED]: id: %d %d\n", newProcess->id,
@@ -136,6 +151,8 @@ int main(int argc, char* argv[]) {
 
         while (runningProcess && runningProcess->remainingTime == 0) {
             if (finishProcess(runningProcess, algorithm)) {
+                printf("[CHECKING2]: id: %d %d %d\n", runningProcess->id,
+                       getClk(), runningProcess->remainingTime);
                 outputPCBLogEntry(schedulerLogFile, runningProcess,
                                   runningProcess->finishTime);
                 deletePCB(&processTable, runningProcess->id);
@@ -210,7 +227,8 @@ int main(int argc, char* argv[]) {
         }
 
         if (!runningProcess && !nextProcess &&
-            countProcesses == totalProcesses) {
+            countProcesses == totalProcesses && readyQueue->size == 0) {
+            printf("HIT THE BREAK\n");
             break;
         }
     }
