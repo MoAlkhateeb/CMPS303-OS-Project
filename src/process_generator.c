@@ -136,8 +136,6 @@ int main() {
         if (snd == -1) {
             perror("Error in send");
             exit(1);
-        } else {
-            printf("Process %d sent\n", message.process.id);
         }
     }
 

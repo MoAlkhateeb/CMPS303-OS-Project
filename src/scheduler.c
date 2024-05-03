@@ -9,18 +9,25 @@
 #include "pri_queue.h"
 #include "process_table.h"
 
+// Output file names
 #define schedulerLogFile "scheduler.log"
 #define schedulerPerfFile "scheduler.perf"
 
+// Function prototypes
 pcb* getProcess();
 void outputPerfFile(char* filename);
 void outputPCBLogEntry(char* filename, pcb* pcb, int time);
 void addPCBtoReadyQueue(PriQueue** priQueue, pcb* pcb,
                         enum schedulingAlgorithm algorithm);
 bool finishProcess(pcb* runningProcess, enum schedulingAlgorithm algorithm);
+void updateStoppedTime(pcb* process, pcb* runningProcess, int currentTime);
+void updateRemainingTime(pcb* process, int currentTime);
 
+// Holds the Message Queue ID between the scheduler and the process
+// generator
 int SchedulerQueueID = -1;
 
+// Aggregated times for performance metrics
 int totalWaitingTime = 0;
 int totalTurnaroundTime = 0;
 float totalWeightedTurnaroundTime = 0;
@@ -29,7 +36,6 @@ int totalBurstTime = 0;
 int countProcesses = 0;
 
 int main(int argc, char* argv[]) {
-    // get algorithm information from command line arguments
     if (argc < 3) {
         printf(
             "Usage: %s <num processes> <scheduling algorithm number>"
@@ -38,9 +44,13 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
+    // number of process that will enter the system
     int totalProcesses = atoi(argv[1]);
+
+    // scheduling algorithm that will be used
     enum schedulingAlgorithm algorithm = atoi(argv[2]);
 
+    // If the quantum is not specified for RR algorithm exit
     if (algorithm == RR && argc < 4) {
         printf(
             "Usage: %s <num processes> <scheduling algorithm number> "
@@ -51,9 +61,7 @@ int main(int argc, char* argv[]) {
 
     int quantum = atoi(argv[3]);
 
-    printf("SCHEDULER: Quantum: %d\n", quantum);
-
-    // establish connection with the message queue
+    // establish connection with the message queue  in order to receive
     key_t key = ftok(MSGQUEUENAME, MSGQUEUEKEY);
     SchedulerQueueID = msgget(key, 0666);
     if (SchedulerQueueID == -1) {
@@ -78,25 +86,22 @@ int main(int argc, char* argv[]) {
 
     // main scheduling loop
     while (true) {
-        bool quantumOver;
+        bool quantumOver = false;
 
-        do {
+        // wait for either the quantum to finish or the process to finish
+        while (runningProcess && algorithm == RR && !quantumOver) {
             int waitTime = quantum;
-            if (runningProcess) {
-                if (quantum < runningProcess->remainingTime)
-                    waitTime = quantum;
-                else
-                    waitTime = runningProcess->remainingTime;
-            }
-            quantumOver = runningProcess &&
-                          (getClk() - runningProcess->resumedTime) >= waitTime;
-        } while (runningProcess && !quantumOver && algorithm == RR);
+
+            if (runningProcess->remainingTime < quantum)
+                waitTime = runningProcess->remainingTime;
+
+            quantumOver = (getClk() - runningProcess->resumedTime) >= waitTime;
+        }
 
         // check if the running process has finished
         if (runningProcess) {
+            // if the process has finished delete it and output the log entry
             if (finishProcess(runningProcess, algorithm)) {
-                printf("[CHECKING1]: id: %d %d %d\n", runningProcess->id,
-                       getClk(), runningProcess->remainingTime);
                 outputPCBLogEntry(schedulerLogFile, runningProcess,
                                   runningProcess->finishTime);
                 deletePCB(&processTable, runningProcess->id);
@@ -106,53 +111,29 @@ int main(int argc, char* argv[]) {
             // add the process back to the ready queue if it's not finished
             else {
                 addPCBtoReadyQueue(&readyQueue, runningProcess, algorithm);
-                if (runningProcess) {
-                    printf("[ADDED1]: id: %d\n", runningProcess->id);
-                }
             }
         }
 
-        // add all the new processes arrived at the current clk time
+        // Wait for processes to arrive
         while (true) {
             pcb* newProcess = getProcess();
             if (!newProcess) break;
 
             addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
-            if (newProcess) {
-                printf("[ADDED2]: id: %d\n", newProcess->id);
-            }
             addPCBFront(&processTable, newProcess);
             countProcesses++;
-            printf("[ENTERED]: id: %d %d\n", newProcess->id,
-                   newProcess->remainingTime);
         }
 
         // the next process that should run
         pcb* nextProcess = popPriQueue(&readyQueue);
 
-        int time = getClk();
+        int currentTime = getClk();
+        updateRemainingTime(runningProcess, currentTime);
+        updateStoppedTime(nextProcess, runningProcess, currentTime);
 
-        // update the remaining time for the current process
-        if (runningProcess &&
-            runningProcess->stoppedTime <= runningProcess->resumedTime) {
-            int remainingTime = runningProcess->remainingTimeAfterStop -
-                                (time - runningProcess->resumedTime);
-            runningProcess->remainingTime =
-                (remainingTime < 0) ? 0 : remainingTime;
-        }
-
-        // calculate the wait time for the process that will run next
-        if (nextProcess && nextProcess != runningProcess) {
-            int waitTime =
-                time - nextProcess->arrivalTime -
-                (nextProcess->burstTime - nextProcess->remainingTime);
-            nextProcess->waitTime = (waitTime < 0) ? 0 : waitTime;
-        }
-
+        // if the remainingTime is 0 wait for waitpid to return
         while (runningProcess && runningProcess->remainingTime == 0) {
             if (finishProcess(runningProcess, algorithm)) {
-                printf("[CHECKING2]: id: %d %d %d\n", runningProcess->id,
-                       getClk(), runningProcess->remainingTime);
                 outputPCBLogEntry(schedulerLogFile, runningProcess,
                                   runningProcess->finishTime);
                 deletePCB(&processTable, runningProcess->id);
@@ -165,19 +146,20 @@ int main(int argc, char* argv[]) {
             runningProcess && nextProcess && runningProcess != nextProcess;
 
         if (algorithm == SRTN && currentNotSameAsNext &&
-            runningProcess->remainingTime > nextProcess->remainingTime) {
+            runningProcess->remainingTime <= nextProcess->remainingTime) {
             addPCBtoReadyQueue(&readyQueue, nextProcess, algorithm);
             continue;
         }
 
-        // stop current process if it's not the next process or quantum
-        // is over
-        if ((algorithm == SRTN && currentNotSameAsNext) ||
-            (algorithm == RR && quantumOver && currentNotSameAsNext)) {
-            // check if the running process has finished
+        bool SRTNShouldStop =
+            runningProcess && nextProcess &&
+            runningProcess->remainingTime > nextProcess->remainingTime;
 
-            printf("[STOPPED]: id: %d %d %d\n", runningProcess->id, getClk(),
-                   runningProcess->remainingTime);
+        // If preemptive and current is different from next
+        // stop the current Process (if RR check if quantum is over)
+        if (((algorithm == SRTN && SRTNShouldStop) ||
+             (algorithm == RR && quantumOver)) &&
+            currentNotSameAsNext) {
             runningProcess->state = STOPPED;
             runningProcess->stoppedTime = getClk();
             runningProcess->remainingTimeAfterStop =
@@ -187,13 +169,12 @@ int main(int argc, char* argv[]) {
             runningProcess = NULL;
         }
 
-        // ensure no processes are started when there is a running processes
+        // ensures a single CPU architecture
+        // no process can start if there is a running process
         if (runningProcess) continue;
 
         // start the next process
         if (nextProcess && nextProcess->pid == -1) {
-            printf("[STARTED]: id: %d %d %d\n", nextProcess->id, getClk(),
-                   nextProcess->remainingTime);
             int pid = fork();
 
             nextProcess->startTime = getClk();
@@ -215,8 +196,6 @@ int main(int argc, char* argv[]) {
             runningProcess = nextProcess;
 
         } else if (nextProcess && nextProcess->state == STOPPED) {
-            printf("[RESUMED]: id: %d %d %d\n", nextProcess->id, getClk(),
-                   nextProcess->remainingTime);
             nextProcess->resumedTime = getClk();
             nextProcess->state = RESUMED;
             kill(nextProcess->pid, SIGCONT);
@@ -227,10 +206,8 @@ int main(int argc, char* argv[]) {
         }
 
         if (!runningProcess && !nextProcess &&
-            countProcesses == totalProcesses && readyQueue->size == 0) {
-            printf("HIT THE BREAK\n");
+            countProcesses == totalProcesses && readyQueue->size == 0)
             break;
-        }
     }
     outputPerfFile(schedulerPerfFile);
     destroyPriQueue(&readyQueue);
@@ -292,7 +269,7 @@ void outputPerfFile(char* filename) {
     float avgWeightedTurnaroundTime =
         totalWeightedTurnaroundTime / (float)countProcesses;
     fprintf(file, "CPU utilization = %.2f\n",
-            (float)totalBurstTime / getClk() * 100);
+            (float)totalBurstTime / (getClk() - 1) * 100);
     fprintf(file, "Avg WTA. = %.2f\n", avgWeightedTurnaroundTime);
     fprintf(file, "Avg Waiting = %.2f\n",
             totalWaitingTime / (float)countProcesses);
@@ -334,10 +311,6 @@ bool finishProcess(pcb* runningProcess, enum schedulingAlgorithm algorithm) {
         pid = waitpid(runningProcess->pid, &status, WNOHANG);
 
     if (pid > 0 && WIFEXITED(status)) {
-        printf("The pid is %d. The exit code is %d. IFEXITED IS %d\n", pid,
-               WEXITSTATUS(status), WIFEXITED(status));
-        printf("[FINISHED]: id: %d %d %d\n", runningProcess->id, getClk(),
-               runningProcess->remainingTime);
         runningProcess->state = FINISHED;
         runningProcess->remainingTime = 0;
         runningProcess->finishTime = runningProcess->waitTime +
@@ -359,4 +332,31 @@ bool finishProcess(pcb* runningProcess, enum schedulingAlgorithm algorithm) {
     }
 
     return false;
+}
+
+void updateRemainingTime(pcb* process, int currentTime) {
+    if (process && process->stoppedTime <= process->resumedTime) {
+        int remainingTime = process->remainingTimeAfterStop -
+                            (currentTime - process->resumedTime);
+
+        if (remainingTime < 0) {
+            process->remainingTime = 0;
+        } else {
+            process->remainingTime = remainingTime;
+        }
+    }
+}
+
+void updateStoppedTime(pcb* process, pcb* runningProcess, int currentTime) {
+    // update the wait time for the process that will run next
+    if (process && process != runningProcess) {
+        int waitTime = currentTime - process->arrivalTime -
+                       (process->burstTime - process->remainingTime);
+
+        if (waitTime < 0) {
+            process->waitTime = 0;
+        } else {
+            process->waitTime = waitTime;
+        }
+    }
 }
