@@ -17,6 +17,7 @@ void outputPerfFile(char* filename);
 void outputPCBLogEntry(char* filename, pcb* pcb, int time);
 void addPCBtoReadyQueue(PriQueue** priQueue, pcb* pcb,
                         enum schedulingAlgorithm algorithm);
+bool finishProcess(pcb* runningProcess, enum schedulingAlgorithm algorithm);
 
 int SchedulerQueueID = -1;
 
@@ -86,40 +87,7 @@ int main(int argc, char* argv[]) {
 
         // check if the running process has finished
         if (runningProcess) {
-            int status, pid;
-
-            // if non-premptive wait for the process to finish
-            if (algorithm == HPF)
-                pid = waitpid(runningProcess->pid, &status, !WNOHANG);
-            else
-                pid = waitpid(runningProcess->pid, &status, WNOHANG);
-
-            // status is only set if pid > 0.
-            // if the process has finished successfully update the pcb and log
-            if (pid > 0 && WIFEXITED(status)) {
-                printf("The pid is %d. The exit code is %d. IFEXITED IS %d\n",
-                       pid, WEXITSTATUS(status), WIFEXITED(status));
-                printf("[FINISHED]: id: %d %d %d\n", runningProcess->id,
-                       getClk(), runningProcess->remainingTime);
-                runningProcess->state = FINISHED;
-                runningProcess->remainingTime = 0;
-                runningProcess->finishTime = runningProcess->waitTime +
-                                             runningProcess->burstTime +
-                                             runningProcess->arrivalTime;
-                runningProcess->turnaroundTime =
-                    runningProcess->finishTime - runningProcess->arrivalTime;
-                runningProcess->weightedTurnaroundTime =
-                    runningProcess->turnaroundTime /
-                    (float)runningProcess->burstTime;
-                totalBurstTime += runningProcess->burstTime;
-                totalWaitingTime += runningProcess->waitTime;
-                totalTurnaroundTime += runningProcess->turnaroundTime;
-                totalWeightedTurnaroundTime +=
-                    runningProcess->weightedTurnaroundTime;
-                totalWeightedTurnaroundTimeSquared +=
-                    runningProcess->weightedTurnaroundTime *
-                    runningProcess->weightedTurnaroundTime;
-
+            if (finishProcess(runningProcess, algorithm)) {
                 outputPCBLogEntry(schedulerLogFile, runningProcess,
                                   runningProcess->finishTime);
                 deletePCB(&processTable, runningProcess->id);
@@ -166,6 +134,16 @@ int main(int argc, char* argv[]) {
             nextProcess->waitTime = (waitTime < 0) ? 0 : waitTime;
         }
 
+        while (runningProcess && runningProcess->remainingTime == 0) {
+            if (finishProcess(runningProcess, algorithm)) {
+                outputPCBLogEntry(schedulerLogFile, runningProcess,
+                                  runningProcess->finishTime);
+                deletePCB(&processTable, runningProcess->id);
+                runningProcess = NULL;
+                break;
+            }
+        }
+
         bool currentNotSameAsNext =
             runningProcess && nextProcess && runningProcess != nextProcess;
 
@@ -179,6 +157,8 @@ int main(int argc, char* argv[]) {
         // is over
         if ((algorithm == SRTN && currentNotSameAsNext) ||
             (algorithm == RR && quantumOver && currentNotSameAsNext)) {
+            // check if the running process has finished
+
             printf("[STOPPED]: id: %d %d %d\n", runningProcess->id, getClk(),
                    runningProcess->remainingTime);
             runningProcess->state = STOPPED;
@@ -322,4 +302,43 @@ pcb* getProcess() {
     *newProcess = message.process;
 
     return newProcess;
+}
+
+bool finishProcess(pcb* runningProcess, enum schedulingAlgorithm algorithm) {
+    if (!runningProcess) return false;
+
+    int status, pid;
+
+    // if non-premptive wait for the process to finish
+    if (algorithm == HPF)
+        pid = waitpid(runningProcess->pid, &status, !WNOHANG);
+    else
+        pid = waitpid(runningProcess->pid, &status, WNOHANG);
+
+    if (pid > 0 && WIFEXITED(status)) {
+        printf("The pid is %d. The exit code is %d. IFEXITED IS %d\n", pid,
+               WEXITSTATUS(status), WIFEXITED(status));
+        printf("[FINISHED]: id: %d %d %d\n", runningProcess->id, getClk(),
+               runningProcess->remainingTime);
+        runningProcess->state = FINISHED;
+        runningProcess->remainingTime = 0;
+        runningProcess->finishTime = runningProcess->waitTime +
+                                     runningProcess->burstTime +
+                                     runningProcess->arrivalTime;
+        runningProcess->turnaroundTime =
+            runningProcess->finishTime - runningProcess->arrivalTime;
+        runningProcess->weightedTurnaroundTime =
+            runningProcess->turnaroundTime / (float)runningProcess->burstTime;
+        totalBurstTime += runningProcess->burstTime;
+        totalWaitingTime += runningProcess->waitTime;
+        totalTurnaroundTime += runningProcess->turnaroundTime;
+        totalWeightedTurnaroundTime += runningProcess->weightedTurnaroundTime;
+        totalWeightedTurnaroundTimeSquared +=
+            runningProcess->weightedTurnaroundTime *
+            runningProcess->weightedTurnaroundTime;
+
+        return true;
+    }
+
+    return false;
 }
