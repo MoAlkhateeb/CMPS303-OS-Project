@@ -145,7 +145,6 @@ int main(int argc, char* argv[]) {
         }
 
         // the next process that should run
-
         pcb* nextProcess = popPriQueue(&readyQueue);
 
         int time = getClk();
@@ -169,6 +168,12 @@ int main(int argc, char* argv[]) {
 
         bool currentNotSameAsNext =
             runningProcess && nextProcess && runningProcess != nextProcess;
+
+        if (algorithm == SRTN && currentNotSameAsNext &&
+            runningProcess->remainingTime > nextProcess->remainingTime) {
+            addPCBtoReadyQueue(&readyQueue, nextProcess, algorithm);
+            continue;
+        }
 
         // stop current process if it's not the next process or quantum
         // is over
