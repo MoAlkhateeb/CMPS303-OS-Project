@@ -143,6 +143,7 @@ int main() {
 
     // wait for all children to finish before clearing resources
     wait(NULL);
+    free(p);
     clearResources();
 }
 
