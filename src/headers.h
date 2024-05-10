@@ -77,6 +77,8 @@ typedef struct pcb {
 
     int turnaroundTime;
     float weightedTurnaroundTime;
+
+    int memsize;
 } pcb;
 
 typedef struct processMessage {

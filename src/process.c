@@ -12,7 +12,7 @@ int main(int agrc, char* argv[]) {
        https://www.tutorialspoint.com/c_standard_library/c_function_clock.htm
     */
 
-    while (clock() / (double)CLOCKS_PER_SEC < remainingTime) {
+    while (clock() < remainingTime * CLOCKS_PER_SEC) {
         // Busy Wait Consume CPU
     }
 }

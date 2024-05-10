@@ -12,6 +12,7 @@ struct processData {
     int priority;
     int runningtime;
     int id;
+    int memsize;
 };
 
 int SchedulerQueueID = -1;
@@ -38,15 +39,17 @@ int main() {
     struct processData *p = malloc(sizeof(struct processData) * num_processes);
     int i = 0;
     while (fgets(line, sizeof(line), file)) {
-        if (line[0] == '#') {
+        if (line[0] == '#' || line[0] == '\n' || line[0] == ' ') {
             continue;
         }
-        int id, arrival, runtime, priority;
-        sscanf(line, "%d\t%d\t%d\t%d", &id, &arrival, &runtime, &priority);
+        int id, arrival, runtime, priority, memsize;
+        sscanf(line, "%d\t%d\t%d\t%d\t%d", &id, &arrival, &runtime, &priority,
+               &memsize);
         p[i].arrivaltime = arrival;
         p[i].id = id;
         p[i].runningtime = runtime;
         p[i].priority = priority;
+        p[i].memsize = memsize;
         i++;
     }
 
@@ -128,6 +131,7 @@ int main() {
         process.finishTime = -1;
         process.turnaroundTime = -1;
         process.weightedTurnaroundTime = -1;
+        process.memsize = p[j].memsize;
 
         message.process = process;
 
