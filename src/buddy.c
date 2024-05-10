@@ -1,14 +1,12 @@
 #include "buddy.h"
 
-#include <math.h>
-
 mem_block *createBlock(int size, int start) {
     mem_block *block = (mem_block *)malloc(sizeof(mem_block));
     block->size = size;
     block->process = NULL;
     block->isFree = true;
     block->start = start;
-    block->end = start + size;
+    block->end = start + size - 1;
     block->left = NULL;
     block->right = NULL;
     return block;
@@ -44,18 +42,27 @@ bool divideBlock(mem_block *block) {
     return true;
 }
 
-bool insertBuddy(buddy *b, pcb *process) {
+bool insertBuddy(buddy *b, pcb *process, int time) {
     int closest_size = getClosestPowerOfTwo(process->memsize);
     mem_block *closest = findBlockBySize(b->root, closest_size);
+
     if (closest) {
         closest->process = process;
         closest->isFree = false;
+
+        FILE *memoryFile = fopen(memoryLogFile, "a");
+        fprintf(memoryFile,
+                "At time %d allocated %d bytes for process %d from %d "
+                "to %d\n",
+                time, process->memsize, process->id, closest->start,
+                closest->end);
+        fclose(memoryFile);
         return true;
     }
-    return insertProcess(b->root, process, closest_size);
+    return insertProcess(b->root, process, closest_size, time);
 }
 
-bool insertProcess(mem_block *block, pcb *process, int closest_size) {
+bool insertProcess(mem_block *block, pcb *process, int closest_size, int time) {
     if (!block) return false;
     if (block->size < process->memsize) return false;
     if (!block->isFree) return false;
@@ -63,15 +70,24 @@ bool insertProcess(mem_block *block, pcb *process, int closest_size) {
     if (!block->left && !block->right && block->size == closest_size) {
         block->process = process;
         block->isFree = false;
+
+        FILE *memoryFile = fopen(memoryLogFile, "a");
+        fprintf(memoryFile,
+                "At time %d allocated %d bytes for process %d from %d "
+                "to %d\n",
+                time, process->memsize, process->id, block->start, block->end);
+        fclose(memoryFile);
+
         return true;
     }
 
     if (!block->left && !block->right && block->size > process->memsize) {
         if (!divideBlock(block)) return false;
-        return insertProcess(block->left, process, closest_size);
+        return insertProcess(block->left, process, closest_size, time);
     } else {
-        if (insertProcess(block->left, process, closest_size)) return true;
-        return insertProcess(block->right, process, closest_size);
+        if (insertProcess(block->left, process, closest_size, time))
+            return true;
+        return insertProcess(block->right, process, closest_size, time);
     }
     return false;
 }
@@ -125,6 +141,14 @@ void combineMemoryBlocks(mem_block *block) {
 bool removeProcess(buddy *b, pcb *process) {
     mem_block *block = findBlockByProcess(b->root, process);
     if (!block) return false;
+
+    FILE *memoryFile = fopen(memoryLogFile, "a");
+    fprintf(memoryFile,
+            "At time %d freed %d bytes for process %d from %d "
+            "to %d\n",
+            process->finishTime, process->memsize, process->id, block->start,
+            block->end);
+    fclose(memoryFile);
 
     block->process = NULL;
     block->isFree = true;

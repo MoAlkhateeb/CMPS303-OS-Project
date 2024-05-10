@@ -20,14 +20,18 @@ typedef struct buddy {
 int getClosestPowerOfTwo(int size);
 
 buddy *createBuddy(int size);
-bool insertProcess(mem_block *block, pcb *process, int closest_size);
+
+bool insertBuddy(buddy *b, pcb *process, int time);
+bool insertProcess(mem_block *block, pcb *process, int closest_size, int time);
+
 bool removeProcess(buddy *b, pcb *process);
+void combineMemoryBlocks(mem_block *block);
 
 mem_block *findBlockBySize(mem_block *block, int size);
 mem_block *findBlockByProcess(mem_block *block, pcb *process);
-void combineMemoryBlocks(mem_block *block);
 
 void printBuddy(mem_block *block, int depth, const char *prefix);
-void freeBuddy(buddy *b);
 bool divideBlock(mem_block *block);
+
 mem_block *createBlock(int size, int start);
+void freeBuddy(buddy *b);

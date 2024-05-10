@@ -5,13 +5,10 @@
 #include <sys/msg.h>
 #include <sys/wait.h>
 
+#include "buddy.h"
 #include "headers.h"
 #include "pri_queue.h"
 #include "process_table.h"
-
-// Output file names
-#define schedulerLogFile "scheduler.log"
-#define schedulerPerfFile "scheduler.perf"
 
 // Function prototypes
 pcb* getProcess();
@@ -70,6 +67,7 @@ int main(int argc, char* argv[]) {
     }
 
     // create structures for the scheduler
+    buddy* buddy = createBuddy(1024);
     ProcessTable* processTable = createProcessTable();
     PriQueue* readyQueue = createPriQueue();
 
@@ -77,6 +75,12 @@ int main(int argc, char* argv[]) {
     FILE* file = fopen(schedulerLogFile, "w");
     fprintf(file, "#At time x process y state arr w total z remain y wait k\n");
     fclose(file);
+
+    // output headers for the memory file
+    FILE* memoryFile = fopen(memoryLogFile, "w");
+    fprintf(memoryFile,
+            "#At time x allocated y bytes for process z from i to j\n");
+    fclose(memoryFile);
 
     // initialize the clock
     initClk();
@@ -102,6 +106,7 @@ int main(int argc, char* argv[]) {
         if (runningProcess) {
             // if the process has finished delete it and output the log entry
             if (finishProcess(runningProcess, algorithm)) {
+                removeProcess(buddy, runningProcess);
                 outputPCBLogEntry(schedulerLogFile, runningProcess,
                                   runningProcess->finishTime);
                 deletePCB(&processTable, runningProcess->id);
@@ -118,7 +123,8 @@ int main(int argc, char* argv[]) {
         while (true) {
             pcb* newProcess = getProcess();
             if (!newProcess) break;
-
+            printf("[ENTERED]: %d with memsize %d\n", newProcess->id,
+                   newProcess->memsize);
             addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
             addPCBFront(&processTable, newProcess);
             countProcesses++;
@@ -134,6 +140,7 @@ int main(int argc, char* argv[]) {
         // if the remainingTime is 0 wait for waitpid to return
         while (runningProcess && runningProcess->remainingTime == 0) {
             if (finishProcess(runningProcess, algorithm)) {
+                removeProcess(buddy, runningProcess);
                 outputPCBLogEntry(schedulerLogFile, runningProcess,
                                   runningProcess->finishTime);
                 deletePCB(&processTable, runningProcess->id);
@@ -175,6 +182,14 @@ int main(int argc, char* argv[]) {
 
         // start the next process
         if (nextProcess && nextProcess->pid == -1) {
+            // printf("Starting process %d %d\n", nextProcess->id,
+            //    nextProcess->memsize);
+            if (!insertBuddy(buddy, nextProcess, getClk())) {
+                // printf("Skipped process %d\n", nextProcess->id);
+                addPCBtoReadyQueue(&readyQueue, nextProcess, algorithm);
+                continue;
+            }
+
             int pid = fork();
 
             nextProcess->startTime = getClk();
@@ -288,8 +303,8 @@ void outputPerfFile(char* filename) {
 
 pcb* getProcess() {
     processMessage message;
-    int rcv = msgrcv(SchedulerQueueID, &message, sizeof(message.process), 0,
-                     IPC_NOWAIT);
+    int rcv =
+        msgrcv(SchedulerQueueID, &message, sizeof(message), 0, IPC_NOWAIT);
 
     if (rcv == -1) return NULL;
 

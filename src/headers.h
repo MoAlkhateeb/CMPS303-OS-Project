@@ -1,5 +1,6 @@
 #pragma once
 
+#include <math.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>  //if you don't use scanf/printf change this include
@@ -17,6 +18,12 @@
 #define SHKEY 300
 #define MSGQUEUEKEY 100
 #define MSGQUEUENAME "headers.h"
+
+// Output file names
+#define memoryLogFile "memory.log"
+#define schedulerLogFile "scheduler.log"
+#define schedulerPerfFile "scheduler.perf"
+
 ///==============================
 // don't mess with this variable//
 static int *shmaddr;  //
@@ -63,6 +70,7 @@ typedef struct pcb {
     int burstTime;
     int arrivalTime;
     enum state state;
+    int memsize;
 
     int startTime;
     int stoppedTime;
@@ -78,7 +86,6 @@ typedef struct pcb {
     int turnaroundTime;
     float weightedTurnaroundTime;
 
-    int memsize;
 } pcb;
 
 typedef struct processMessage {

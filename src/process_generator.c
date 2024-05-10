@@ -118,6 +118,7 @@ int main() {
         process.priority = p[j].priority;
         process.burstTime = p[j].runningtime;
         process.state = STARTED;
+        process.memsize = p[j].memsize;
 
         // constantly need to be updated
         process.remainingTime = p[j].runningtime;
@@ -131,12 +132,12 @@ int main() {
         process.finishTime = -1;
         process.turnaroundTime = -1;
         process.weightedTurnaroundTime = -1;
-        process.memsize = p[j].memsize;
 
         message.process = process;
 
-        int snd = msgsnd(SchedulerQueueID, &message, sizeof(message.process),
-                         !IPC_NOWAIT);
+        int snd =
+            msgsnd(SchedulerQueueID, &message, sizeof(message), !IPC_NOWAIT);
+
         if (snd == -1) {
             perror("Error in send");
             exit(1);
