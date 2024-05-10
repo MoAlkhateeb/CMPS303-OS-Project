@@ -35,3 +35,4 @@ bool divideBlock(mem_block *block);
 
 mem_block *createBlock(int size, int start);
 void freeBuddy(buddy *b);
+void freeBlock(mem_block *block);

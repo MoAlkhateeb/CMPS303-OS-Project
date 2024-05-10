@@ -157,3 +157,12 @@ bool removeProcess(buddy *b, pcb *process) {
 
     return true;
 }
+
+void freeBlock(mem_block *block) {
+    if (!block) return;
+    freeBlock(block->left);
+    freeBlock(block->right);
+    free(block);
+}
+
+void freeBuddy(buddy *b) { freeBlock(b->root); }

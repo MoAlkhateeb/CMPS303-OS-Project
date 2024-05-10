@@ -222,6 +222,7 @@ int main(int argc, char* argv[]) {
     outputPerfFile(schedulerPerfFile);
     destroyPriQueue(&readyQueue);
     destroyProcessTable(processTable);
+    freeBuddy(buddy);
     destroyClk(true);
     return 0;
 }
