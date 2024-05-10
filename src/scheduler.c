@@ -123,8 +123,6 @@ int main(int argc, char* argv[]) {
         while (true) {
             pcb* newProcess = getProcess();
             if (!newProcess) break;
-            printf("[ENTERED]: %d with memsize %d\n", newProcess->id,
-                   newProcess->memsize);
             addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
             addPCBFront(&processTable, newProcess);
             countProcesses++;
@@ -182,10 +180,7 @@ int main(int argc, char* argv[]) {
 
         // start the next process
         if (nextProcess && nextProcess->pid == -1) {
-            // printf("Starting process %d %d\n", nextProcess->id,
-            //    nextProcess->memsize);
             if (!insertBuddy(buddy, nextProcess, getClk())) {
-                // printf("Skipped process %d\n", nextProcess->id);
                 addPCBtoReadyQueue(&readyQueue, nextProcess, algorithm);
                 continue;
             }
