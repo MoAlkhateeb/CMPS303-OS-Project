@@ -70,6 +70,7 @@ int main(int argc, char* argv[]) {
     buddy* buddy = createBuddy(1024);
     ProcessTable* processTable = createProcessTable();
     PriQueue* readyQueue = createPriQueue();
+    PriQueue* waitingQueue = createPriQueue();
 
     // output headers for the log file
     FILE* file = fopen(schedulerLogFile, "w");
@@ -106,16 +107,26 @@ int main(int argc, char* argv[]) {
         if (runningProcess) {
             // if the process has finished delete it and output the log entry
             if (finishProcess(runningProcess, algorithm)) {
+                int time = runningProcess->finishTime;
                 removeProcess(buddy, runningProcess);
                 outputPCBLogEntry(schedulerLogFile, runningProcess,
                                   runningProcess->finishTime);
                 deletePCB(&processTable, runningProcess->id);
                 runningProcess = NULL;
 
+                pcb* newProcess = peekPriQueue(&waitingQueue);
+                printf("Current New Process: %p\n", newProcess);
+                if (newProcess && insertBuddy(buddy, newProcess, time)) {
+                    popPriQueue(&waitingQueue);
+                    printf("[LEFT]: Process %d Left Waiting Queue\n",
+                           newProcess->id);
+                    addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
+                }
             }
             // add the process back to the ready queue if it's not finished
             else {
-                addPCBtoReadyQueue(&readyQueue, runningProcess, algorithm);
+                if (algorithm == RR)
+                    addPCBtoReadyQueue(&readyQueue, runningProcess, algorithm);
             }
         }
 
@@ -123,9 +134,19 @@ int main(int argc, char* argv[]) {
         while (true) {
             pcb* newProcess = getProcess();
             if (!newProcess) break;
-            addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
+
             addPCBFront(&processTable, newProcess);
             countProcesses++;
+            if (!insertBuddy(buddy, newProcess, newProcess->arrivalTime)) {
+                printf("[ENTERED]: Process %d Entered Waiting Queue\n",
+                       newProcess->id);
+                insertPriQueue(&waitingQueue, 10, newProcess);
+                continue;
+            }
+
+            printf("[ENTERED]: Process %d Entered Ready Queue %d remain\n",
+                   newProcess->id, newProcess->remainingTime);
+            addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
         }
 
         // the next process that should run
@@ -138,11 +159,20 @@ int main(int argc, char* argv[]) {
         // if the remainingTime is 0 wait for waitpid to return
         while (runningProcess && runningProcess->remainingTime == 0) {
             if (finishProcess(runningProcess, algorithm)) {
+                int time = runningProcess->finishTime;
                 removeProcess(buddy, runningProcess);
                 outputPCBLogEntry(schedulerLogFile, runningProcess,
                                   runningProcess->finishTime);
                 deletePCB(&processTable, runningProcess->id);
                 runningProcess = NULL;
+                pcb* newProcess = peekPriQueue(&waitingQueue);
+                printf("Current New Process: %p\n", newProcess);
+                if (newProcess && insertBuddy(buddy, newProcess, time)) {
+                    popPriQueue(&waitingQueue);
+                    printf("[LEFT]: Process %d Left Waiting Queue\n",
+                           newProcess->id);
+                    addPCBtoReadyQueue(&readyQueue, newProcess, algorithm);
+                }
                 break;
             }
         }
@@ -165,12 +195,20 @@ int main(int argc, char* argv[]) {
         if (((algorithm == SRTN && SRTNShouldStop) ||
              (algorithm == RR && quantumOver)) &&
             currentNotSameAsNext) {
+            printf(
+                "[STOPPED]: %p Process %d Stopped rem time %d to start the "
+                "%p nextProcess with id %d rem time %d\n",
+                runningProcess, runningProcess->id,
+                runningProcess->remainingTime, nextProcess, nextProcess->id,
+                nextProcess->remainingTime);
+
             runningProcess->state = STOPPED;
             runningProcess->stoppedTime = getClk();
             runningProcess->remainingTimeAfterStop =
                 runningProcess->remainingTime;
             kill(runningProcess->pid, SIGSTOP);
             outputPCBLogEntry(schedulerLogFile, runningProcess, getClk());
+            addPCBtoReadyQueue(&readyQueue, runningProcess, algorithm);
             runningProcess = NULL;
         }
 
@@ -180,11 +218,6 @@ int main(int argc, char* argv[]) {
 
         // start the next process
         if (nextProcess && nextProcess->pid == -1) {
-            if (!insertBuddy(buddy, nextProcess, getClk())) {
-                addPCBtoReadyQueue(&readyQueue, nextProcess, algorithm);
-                continue;
-            }
-
             int pid = fork();
 
             nextProcess->startTime = getClk();
@@ -349,7 +382,9 @@ void updateRemainingTime(pcb* process, int currentTime) {
     if (process && process->stoppedTime <= process->resumedTime) {
         int remainingTime = process->remainingTimeAfterStop -
                             (currentTime - process->resumedTime);
-
+        // printf("%d remainingTime Old: %d New: %d resumed: %d curr: %d\n",
+        //        process->id, process->remainingTime, remainingTime,
+        //        process->resumedTime, currentTime);
         if (remainingTime < 0) {
             process->remainingTime = 0;
         } else {

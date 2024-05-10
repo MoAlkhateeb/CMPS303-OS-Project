@@ -23,3 +23,4 @@ void insertPriQueue(PriQueue **queue, int priority, pcb *pcb);
 pcb *popPriQueue(PriQueue **queue);
 int isEmptyPriQueue(PriQueue **queue);
 void printPriQueue(PriQueue **queue);
+pcb *peekPriQueue(PriQueue **queue);

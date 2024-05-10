@@ -82,7 +82,7 @@ typedef struct pcb {
     int remainingTimeAfterStop;
     int remainingTime;
     int waitTime;
-
+    bool allocated;
     int turnaroundTime;
     float weightedTurnaroundTime;
 

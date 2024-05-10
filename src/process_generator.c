@@ -132,7 +132,7 @@ int main() {
         process.finishTime = -1;
         process.turnaroundTime = -1;
         process.weightedTurnaroundTime = -1;
-
+        process.allocated = false;
         message.process = process;
 
         int snd =

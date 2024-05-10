@@ -49,7 +49,7 @@ bool insertBuddy(buddy *b, pcb *process, int time) {
     if (closest) {
         closest->process = process;
         closest->isFree = false;
-
+        process->allocated = true;
         FILE *memoryFile = fopen(memoryLogFile, "a");
         fprintf(memoryFile,
                 "At time %d allocated %d bytes for process %d from %d "
@@ -70,7 +70,7 @@ bool insertProcess(mem_block *block, pcb *process, int closest_size, int time) {
     if (!block->left && !block->right && block->size == closest_size) {
         block->process = process;
         block->isFree = false;
-
+        process->allocated = true;
         FILE *memoryFile = fopen(memoryLogFile, "a");
         fprintf(memoryFile,
                 "At time %d allocated %d bytes for process %d from %d "

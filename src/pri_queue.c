@@ -77,6 +77,14 @@ pcb *popPriQueue(PriQueue **queue) {
     return pcb;
 }
 
+pcb *peekPriQueue(PriQueue **queue) {
+    if (isEmptyPriQueue(queue)) {
+        return NULL;
+    }
+
+    return (*queue)->head->pcb;
+}
+
 void printPriQueue(PriQueue **queue) {
     PriQueueNode *head = (*queue)->head;
     printf("\nQueue Size: %d\n", (*queue)->size);
